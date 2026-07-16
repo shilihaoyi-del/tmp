@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Models / large binaries (keep local; download separately if needed)
+# hand_landmarker.task
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tgz
+.pytest_cache/
