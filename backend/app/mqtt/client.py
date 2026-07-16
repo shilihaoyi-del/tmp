@@ -1,4 +1,4 @@
-"""Async MQTT bridge using aiomqtt."""
+"""Async MQTT bridge — cloud mailbox for Fibocom SC171V2."""
 
 from __future__ import annotations
 
@@ -8,9 +8,10 @@ import logging
 from typing import Any, Optional
 
 from app.config import Settings, get_settings
-from app.models.schemas import ControlAction, ControlRequest, DeviceStatus, GestureEvent
+from app.models.schemas import ControlRequest, DeviceStatus, GestureEvent, PcCommand
 from app.mqtt import topics
 from app.services.arm_state import ArmStateService, arm_state
+from app.services.metrics import metrics_store
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,6 @@ class MqttBridge:
         self._connected = False
 
     def publish(self, topic: str, payload: dict[str, Any], retain: bool = False) -> None:
-        """Fire-and-forget publish scheduled on the running loop."""
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -62,7 +62,9 @@ class MqttBridge:
         data = json.dumps(payload, ensure_ascii=False)
         try:
             await self._client.publish(topic, data.encode("utf-8"), qos=1, retain=retain)
+            metrics_store.record_mqtt_publish(True)
         except Exception:
+            metrics_store.record_mqtt_publish(False)
             logger.exception("MQTT publish failed: %s", topic)
 
     async def _watchdog_loop(self) -> None:
@@ -98,7 +100,7 @@ class MqttBridge:
                     self._client = client
                     self._connected = True
                     backoff = 1.0
-                    logger.info("MQTT connected to %s:%s", host, port)
+                    logger.info("MQTT connected to %s:%s (SC171V2 bridge)", host, port)
 
                     for t in topics.BACKEND_SUBSCRIPTIONS:
                         await client.subscribe(t, qos=1)
@@ -127,14 +129,18 @@ class MqttBridge:
             return
 
         try:
-            if topic == topics.PC_GESTURE:
-                event = GestureEvent.model_validate(data)
-                await self.state.handle_gesture(event)
+            if topic == topics.PC_CMD:
+                cmd = PcCommand.model_validate(data)
+                await self.state.handle_pc_cmd(cmd)
             elif topic == topics.PC_CONTROL:
                 req = ControlRequest.model_validate(data)
                 await self.state.handle_control(req.action)
             elif topic == topics.PC_HEARTBEAT:
                 await self.state.handle_pc_heartbeat(int(data.get("ts_ms", 0)))
+            elif topic == topics.PC_GESTURE:
+                # debug bypass
+                event = GestureEvent.model_validate(data)
+                await self.state.handle_gesture(event)
             elif topic == topics.DEVICE_STATUS:
                 status = DeviceStatus.model_validate(data)
                 await self.state.handle_device_status(status)

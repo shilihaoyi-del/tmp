@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="jetarm_6dof">
+    <xacro:arg name="prefix" default=""/>
+    <xacro:arg name="camera_type" default="GEMINI"/>
+
+    <!-- Import jetarm macro -->
+    <xacro:include filename="$(find jetarm_6dof_description)/urdf/jetarm_6dof_description.urdf.xacro"/>
+
+    <!-- Import Rviz colors -->
+    <xacro:include filename="$(find jetarm_6dof_description)/urdf/materials.xacro"/>
+
+    <!-- Import jetarm ros_control description -->
+    <xacro:include filename="$(find jetarm_6dof_description)/gazebo/jetarm.gazebo.xacro" /> 
+    <xacro:include filename="$(find jetarm_6dof_description)/gazebo/jetarm.transmission.xacro" /> 
+
+    <!-- Used for fixing robot -->
+    <link name="$(arg prefix)world"/>
+    <gazebo reference="$(arg prefix)world">
+        <static>true</static>
+    </gazebo>
+
+    <xacro:jetarm_6dof parent="$(arg prefix)world" prefix="$(arg prefix)" camera_type="$(arg camera_type)">
+    	<origin xyz="0 0 0" rpy="0 0 0"/> 
+    </xacro:jetarm_6dof>
+
+    <xacro:jetarm_gazebo prefix="$(arg prefix)"></xacro:jetarm_gazebo> 
+    <xacro:jetarm_gazeboo_transmission prefix="$(arg prefix)"></xacro:jetarm_gazeboo_transmission> 
+    <!-- <xacro:jetarm_ros2_control name="jetarm" prefix="$(arg prefix)" /> -->
+</robot>
+

@@ -1,0 +1,369 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+    <!-- parameters -->
+    <xacro:property name="my_pi" value="3.1415926535897931"/>
+
+    <!-- Joint properties -->
+    <xacro:property name="joint_lower_limit" value="-${3.14}"/>
+    <xacro:property name="joint_upper_limit" value="${3.14}"/>
+    <xacro:property name="joint_effort" value="6.0"/>
+    <xacro:property name="joint_velocity" value="0.524"/>
+    <!-- COLORS -->
+    <xacro:property name="jetarm_green" value="0.4 0.9 0.4 1.0"/>
+    <xacro:property name="jetarm_black" value="0.15 0.15 0.15 1.0"/>
+
+    <xacro:macro name="jetarm_6dof" params="camera_type prefix parent **origin">
+        <joint name="${prefix}base_joint" type="fixed">
+            <parent link="${parent}"/>
+            <child link="${prefix}base_link"/>
+	    <xacro:insert_block name="origin"/>
+        </joint>
+        <link name="${prefix}base_link">
+            <visual>
+		<origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 ${-my_pi/2}"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_BASE_GREEN.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="jetarm_green">
+                    <color rgba="${jetarm_green}"/>
+                </material>
+            </visual>
+
+
+            <visual>
+		<origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 ${-my_pi/2}"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_BASE_BLACK.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="black">
+                    <color rgba="${jetarm_black}"/>
+                </material>
+            </visual>
+	    
+            <visual>
+		<origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 ${-my_pi/2}"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_BASE_SCREEN.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="black">
+                    <color rgba="${jetarm_black}"/>
+                </material>
+	    </visual>
+
+            <visual>
+		<origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 ${-my_pi/2}"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_BASE_WHITE.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="white">
+                    <color rgba="0.8 0.8 0.8 1.0"/>
+                </material>
+            </visual>
+
+            <collision>
+		<origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 ${-my_pi/2}"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_BASE.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+            </collision>
+            <inertial>
+		<origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 ${-my_pi/2}"/>
+                <mass value="0.1"/>
+                <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+            </inertial>
+        </link>
+        <joint name="${prefix}joint1" type="revolute">
+            <parent link="${prefix}base_link"/>
+            <child link="${prefix}link1"/>
+	    <origin xyz="0.0 0.0 0.10314916202" rpy="0.0 0.0 0.0"/>
+            <limit lower="-2.1" upper="2.1" effort="${joint_effort}" velocity="${joint_velocity}"/>
+            <axis xyz="0 0 1"/>
+        </joint>
+        <link name="${prefix}link1">
+            <visual>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK1_BLACK.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="black">
+                    <color rgba="${jetarm_black}"/>
+                </material>
+            </visual>
+            <visual>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK1_GREEN.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="jetarm_green">
+                    <color rgba="${jetarm_green}"/>
+                </material>
+            </visual>
+
+            <collision>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK1.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+            </collision>
+
+            <inertial>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <mass value="0.001"/>
+                <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+            </inertial>
+        </link>
+        <joint name="${prefix}joint2" type="revolute">
+            <parent link="${prefix}link1"/>
+            <child link="${prefix}link2"/>
+            <origin xyz="0.0 0.0 0.0" rpy="${my_pi/2} 0.0 0.0"/>
+            <limit lower="-2.1" upper="2.1" effort="${joint_effort}" velocity="${joint_velocity}"/>
+            <axis xyz="0 0 1"/>
+        </joint>
+        <link name="${prefix}link2">
+            <visual>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK2_GREEN.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="jetarm_green">
+                    <color rgba="${jetarm_green}"/>
+                </material>
+            </visual>
+
+            <visual>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK2_WHITE.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="white">
+                    <color rgba="0.8 0.8 0.8 1.0"/>
+                </material>
+            </visual>
+
+            <visual>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK2_BLACK.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="black">
+                    <color rgba="${jetarm_black}"/>
+                </material>
+            </visual>
+
+            <collision>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK2.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+            </collision>
+
+            <inertial>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <mass value="0.001"/>
+                <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+            </inertial>
+        </link>
+        <joint name="${prefix}joint3" type="revolute">
+            <parent link="${prefix}link2"/>
+            <child link="${prefix}link3"/>
+            <origin xyz="0.0 0.12941763737 0.0" rpy="0.0 0.0 0.0"/>
+            <limit lower="-2.1" upper="2.1" effort="${joint_effort}" velocity="${joint_velocity}"/>
+            <axis xyz="0 0 1"/>
+        </joint>
+        <link name="${prefix}link3">
+            <visual>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK3_GREEN.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="jetarm_green">
+                    <color rgba="${jetarm_green}"/>
+                </material>
+            </visual>
+
+            <visual>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK3_WHITE.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="white">
+                    <color rgba="0.8 0.8 0.8 1.0"/>
+                </material>
+            </visual>
+
+            <visual>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK3_BLACK.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="black">
+                    <color rgba="${jetarm_black}"/>
+                </material>
+            </visual>
+
+            <collision>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK3.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+            </collision>
+
+            <inertial>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <mass value="0.001"/>
+                <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+            </inertial>
+        </link>
+        <joint name="${prefix}joint4" type="revolute">
+            <parent link="${prefix}link3"/>
+            <child link="${prefix}link4"/>
+            <origin xyz="0.0 0.12941763737 0.0" rpy="0.0 0.0 0.0"/>
+            <limit lower="-2.1" upper="2.1" effort="${joint_effort}" velocity="${joint_velocity}"/>
+            <axis xyz="0 0 1"/>
+        </joint>
+        <link name="${prefix}link4">
+            <visual>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK4_${camera_type}_GREEN.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="jetarm_green">
+                    <color rgba="${jetarm_green}"/>
+                </material>
+            </visual>
+
+            <visual>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK4_${camera_type}_WHITE.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="white">
+                    <color rgba="0.8 0.8 0.8 1.0"/>
+                </material>
+            </visual>
+
+            <visual>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK4_${camera_type}_BLACK.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="black">
+                    <color rgba="${jetarm_black}"/>
+                </material>
+            </visual>
+
+            <collision>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK4_${camera_type}.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+            </collision>
+
+            <inertial>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <mass value="0.001"/>
+                <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+            </inertial>
+        </link>
+        <joint name="${prefix}joint5" type="revolute">
+            <parent link="${prefix}link4"/>
+            <child link="${prefix}link5"/>
+            <origin xyz="0.0 0.05945312631 0.0" rpy="${-my_pi/2} 0.0 0.0"/>
+            <limit lower="-2.1" upper="2.1" effort="${joint_effort}" velocity="${joint_velocity}"/>
+            <axis xyz="0 0 1"/>
+        </joint>
+        <link name="${prefix}link5">
+            <visual>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK5_WHITE.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="white">
+                    <color rgba="0.8 0.8 0.8 1.0"/>
+                </material>
+            </visual>
+
+            <collision>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/jetarm_6dof/JetArm_6DOF_LINK5.STL"
+                          scale="0.001 0.001 0.001"/>
+                </geometry>
+            </collision>
+
+            <inertial>
+                <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+                <mass value="0.001"/>
+                <inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0"/>
+            </inertial>
+        </link>
+        <joint name="endpoint" type="fixed">
+            <origin xyz="0 0 0.11054687369" rpy="0 0 0"/>
+            <parent link="link5"/>
+            <child link="endpoint"/>
+            <axis xyz="0 0 0"/>
+        </joint>
+        <link name="endpoint"/>
+
+
+        <link
+                name="gripper_servo_link">
+            <inertial>
+                <origin xyz="0.00173398274658465 0.0143803550122597 0.0668818334351561" rpy="0 0 0"/>
+                <mass value="0.0174988102544488"/>
+                <inertia
+                        ixx="1.57024155329016E-06"
+                        ixy="2.76817630588513E-08"
+                        ixz="2.23194266007272E-08"
+                        iyy="4.12618454370932E-06"
+                        iyz="3.03828124784084E-10"
+                        izz="3.2611413740062E-06"/>
+            </inertial>
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/Gripper_Base.STL" scale="0.001 0.001 0.001"/>
+                </geometry>
+                <material name="black">
+                    <color rgba="${jetarm_black}"/>
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <mesh filename="package://jetarm_6dof_description/meshes/Gripper_Base.STL" scale="0.001 0.001 0.001"/>
+                </geometry>
+            </collision>
+        </link>
+        <joint name="gripper_servo_joint" type="fixed">
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <parent link="link5"/>
+            <child link="gripper_servo_link"/>
+            <axis xyz="0 0 0"/>
+        </joint>
+        <xacro:include filename="$(find jetarm_6dof_description)/urdf/gripper.urdf.xacro"/>
+    </xacro:macro>
+</robot>
+

@@ -6,8 +6,9 @@ __pycache__/
 venv/
 .env
 
-# Models / large binaries (keep local; download separately if needed)
-# hand_landmarker.task
+# Frontend
+frontend/node_modules/
+frontend/dist/
 
 # IDE / OS
 .idea/

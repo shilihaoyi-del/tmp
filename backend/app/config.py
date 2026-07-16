@@ -13,10 +13,15 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "SC171V2 Arm Control Backend"
+    app_name: str = "Fibocom SC171V2 Remote Arm Bridge"
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     debug: bool = False
+
+    # Hero module identity (shown on web / MQTT status)
+    module_id: str = "SC171V2"
+    module_name: str = "Fibocom SC171V2"
+    default_carrier: str = "5G/Wi-Fi"
 
     # MQTT Broker
     mqtt_host: str = "127.0.0.1"
@@ -43,6 +48,10 @@ class Settings(BaseSettings):
     step_wrist_roll: float = 8.0
     gripper_open: float = 0.0
     gripper_close: float = 90.0
+
+    # In-process mock for PC + SC171V2 when hardware is unavailable
+    enable_simulator: bool = True
+    sim_source_label: str = "SIM"
 
 
 @lru_cache

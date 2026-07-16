@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<robot name="gripper" xmlns:xacro="http://ros.org/wiki/xacro">
+    <xacro:property name="M_PI" value="3.1415926535897931"/>
+    <link name="r_link">
+        <inertial>
+            <origin xyz="0.000541257829657527 -0.00150000000696238 0.00625150798228247" rpy="0 0 0"/>
+            <mass value="0.00001"/>
+            <inertia
+                    ixx="10"
+                    ixy="0"
+                    ixz="0"
+                    iyy="10"
+                    iyz="0"
+                    izz="10"/>
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://jetarm_6dof_description/meshes/gripper/r_link.stl"/>
+            </geometry>
+            <material name="black"/>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://jetarm_6dof_description/meshes/gripper/r_link.stl"/>
+            </geometry>
+        </collision>
+    </link>
+    <joint name="r_joint" type="revolute">
+        <origin xyz="-0.00704769 -0.01399984321 0.02700709328" rpy="0 0 ${M_PI / 2}"/>
+        <parent link="gripper_servo_link"/>
+        <child link="r_link"/>
+        <axis xyz="0 -1 0"/>
+        <limit
+                lower="0"
+                upper="1.57"
+                effort="1000"
+                velocity="2"/>
+    </joint>
+    <link name="l_link">
+        <inertial>
+            <origin xyz="0.0054115 -0.0015023 0.0058059" rpy="0 0 0"/>
+            <mass value="0.00001"/>
+            <inertia
+                    ixx="10"
+                    ixy="0"
+                    ixz="0"
+                    iyy="10"
+                    iyz="0"
+                    izz="10"/>
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://jetarm_6dof_description/meshes/gripper/l_link.stl"/>
+            </geometry>
+            <material name="black"/>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://jetarm_6dof_description/meshes/gripper/l_link.stl"/>
+            </geometry>
+        </collision>
+    </link>
+    <joint name="l_joint" type="revolute">
+        <origin xyz="-0.0073115 0.01400015081 0.027008 " rpy="0 0 ${M_PI/2}"/>
+        <parent link="gripper_servo_link"/>
+        <child link="l_link"/>
+        <axis xyz="0 -1 0"/>
+        <limit
+                lower="-1.57"
+                upper="1.57"
+                effort="1000"
+                velocity="2"/>
+        <mimic
+                joint="r_joint"
+                multiplier="-1"
+                offset="0"/>
+    </joint>
+    <link name="r_in_link">
+        <inertial>
+            <origin xyz="-1.7319E-09 -0.006 0.0145" rpy="0 0 0"/>
+            <mass value="0.00001"/>
+            <inertia
+                    ixx="10"
+                    ixy="0"
+                    ixz="0"
+                    iyy="10"
+                    iyz="0"
+                    izz="10"/>
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://jetarm_6dof_description/meshes/gripper/r_in_link.stl"/>
+            </geometry>
+            <material name="black"/>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://jetarm_6dof_description/meshes/gripper/r_in_link.stl"/>
+            </geometry>
+        </collision>
+    </link>
+    <joint name="r_in_joint" type="revolute">
+        <origin xyz="-0.0065253 -0.0075039 0.04599137946" rpy="0 0 ${M_PI/2}"/>
+        <parent link="gripper_servo_link"/>
+        <child link="r_in_link"/>
+        <axis xyz="0 1 0"/>
+        <mimic
+                joint="r_joint"
+                multiplier="-1"
+                offset="0"/>
+        <limit
+                lower="-1.57"
+                upper="1.57"
+                effort="1000"
+                velocity="2"/>
+    </joint>
+    <link name="r_out_link">
+        <inertial>
+            <origin xyz="-0.0013784 -0.0060519 0.0096418" rpy="0 0 0"/>
+            <mass value="0.00001"/>
+            <inertia
+                    ixx="10"
+                    ixy="0"
+                    ixz="0"
+                    iyy="10"
+                    iyz="0"
+                    izz="10"/>
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://jetarm_6dof_description/meshes/gripper/r_out_link.stl"/>
+            </geometry>
+            <material name="black"/>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://jetarm_6dof_description/meshes/gripper/r_out_link.stl"/>
+            </geometry>
+        </collision>
+    </link>
+    <joint name="r_out_joint" type="revolute">
+        <origin xyz="0 0 0.029" rpy="0 0 0"/>
+        <parent link="r_in_link"/>
+        <child link="r_out_link"/>
+        <axis xyz="0 1 0"/>
+        <mimic
+                joint="r_joint"
+                multiplier="1"
+                offset="0"/>
+        <limit
+                lower="-1.57"
+                upper="1.57"
+                effort="1000"
+                velocity="2"/>
+    </joint>
+    <link name="l_in_link">
+        <inertial>
+            <origin xyz="-1.7319E-09 -0.006 0.0145" rpy="0 0 0"/>
+            <mass value="0.00001"/>
+            <inertia
+                    ixx="10"
+                    ixy="0"
+                    ixz="0"
+                    iyy="10"
+                    iyz="0"
+                    izz="10"/>
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://jetarm_6dof_description/meshes/gripper/l_in_link.stl"/>
+            </geometry>
+            <material name="black"/>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://jetarm_6dof_description/meshes/gripper/l_in_link.stl"/>
+            </geometry>
+        </collision>
+    </link>
+    <joint name="l_in_joint" type="revolute">
+        <origin xyz="-0.0065053 0.0075039 0.04599108168" rpy="0 0 ${M_PI/2}"/>
+        <parent link="gripper_servo_link"/>
+        <child link="l_in_link"/>
+        <axis xyz="0 -1 0"/>
+        <mimic
+                joint="r_joint"
+                multiplier="-1"
+                offset="0"/>
+        <limit
+                lower="-1.57"
+                upper="1.57"
+                effort="1000"
+                velocity="2"/>
+    </joint>
+    <link name="l_out_link">
+        <inertial>
+            <origin xyz="0.0013784 -0.0060519 0.0096418" rpy="0 0 0"/>
+            <mass value="0.00001"/>
+            <inertia
+                    ixx="10"
+                    ixy="0"
+                    ixz="0"
+                    iyy="10"
+                    iyz="0"
+                    izz="10"/>
+        </inertial>
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://jetarm_6dof_description/meshes/gripper/l_out_link.stl"/>
+            </geometry>
+            <material name="black"/>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <mesh filename="package://jetarm_6dof_description/meshes/gripper/l_out_link.stl"/>
+            </geometry>
+        </collision>
+    </link>
+    <joint name="l_out_joint" type="revolute">
+        <origin xyz="0 0 0.029" rpy="0 0 0"/>
+        <parent link="l_in_link"/>
+        <child link="l_out_link"/>
+        <axis xyz="0 -1 0"/>
+        <mimic
+                joint="r_joint"
+                multiplier="1"
+                offset="0"/>
+        <limit
+                lower="-1.57"
+                upper="1.57"
+                effort="1000"
+                velocity="2"/>
+    </joint>
+</robot>
+

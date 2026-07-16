@@ -1,11 +1,12 @@
-"""MQTT topic definitions for the arm control system."""
+"""MQTT topic definitions — Fibocom SC171V2 is the control-plane hero."""
 
-# PC (vision / gesture) -> broker
-PC_GESTURE = "arm/pc/gesture"
-PC_CONTROL = "arm/pc/control"
+# PC (auxiliary input packaging) -> broker
+PC_CMD = "arm/pc/cmd"              # primary: six-joint targets from PC
+PC_CONTROL = "arm/pc/control"      # start | pause | estop
 PC_HEARTBEAT = "arm/pc/heartbeat"
+PC_GESTURE = "arm/pc/gesture"      # debug only: server-side mapping bypass
 
-# Broker / backend -> SC171V2
+# Broker / backend -> Fibocom SC171V2 (hero)
 DEVICE_CMD = "arm/device/cmd"
 DEVICE_MODE = "arm/device/mode"
 
@@ -13,15 +14,15 @@ DEVICE_MODE = "arm/device/mode"
 DEVICE_STATUS = "arm/device/status"
 DEVICE_HEARTBEAT = "arm/device/heartbeat"
 
-# Broker -> web / dashboard clients
+# Broker -> web observation console
 WEB_STATUS = "arm/web/status"
 WEB_EVENT = "arm/web/event"
 
-# Backend internal subscriptions
 BACKEND_SUBSCRIPTIONS = [
-    PC_GESTURE,
+    PC_CMD,
     PC_CONTROL,
     PC_HEARTBEAT,
+    PC_GESTURE,
     DEVICE_STATUS,
     DEVICE_HEARTBEAT,
 ]
