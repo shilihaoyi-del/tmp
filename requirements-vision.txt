@@ -1,0 +1,7 @@
+# Vision PC (hand_recognition_ddnet.py)
+opencv-python>=4.8.0
+mediapipe>=0.10.0
+numpy>=1.24.0
+scipy>=1.10.0
+tensorflow>=2.13.0
+paho-mqtt>=2.1.0

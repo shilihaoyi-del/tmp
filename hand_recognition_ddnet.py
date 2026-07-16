@@ -276,11 +276,13 @@ def draw_landmarks(frame, landmarks, w, h, color=(100, 255, 100)):
 
 def main():
     print("=" * 55)
-    print("  DD-Net + MediaPipe Hand Gesture Recognition")
+    print("  DD-Net + MediaPipe -> Arm Bridge (HTTP/MQTT)")
     print("=" * 55)
 
+    from pc_arm_bridge import ArmBridge
+
     # 1. Load DD-Net model
-    print("\n[1/4] Building DD-Net (Heavy, SHREC-14)...")
+    print("\n[1/5] Building DD-Net (Heavy, SHREC-14)...")
     model = build_DD_Net(FRAME_L, JOINT_N, JOINT_D, FEAT_D, CLC_NUM, FILTERS)
 
     if os.path.exists(DDNET_WEIGHTS):
@@ -291,18 +293,17 @@ def main():
         print(f"       WARNING: weights not found at {DDNET_WEIGHTS}")
         print("       Running with random weights (predictions will be meaningless).")
         print("       Download the pre-trained SHREC model or train your own.")
-        # Build with dummy forward pass to initialize weights
         dummy_M = np.zeros((1, FRAME_L, FEAT_D), dtype=np.float32)
         dummy_P = np.zeros((1, FRAME_L, JOINT_N, JOINT_D), dtype=np.float32)
         _ = model([dummy_M, dummy_P])
 
     # 2. Load MediaPipe
-    print("[2/4] Loading MediaPipe Hand Landmarker...")
+    print("[2/5] Loading MediaPipe Hand Landmarker...")
     landmarker = create_landmarker()
     print("       MediaPipe ready.")
 
     # 3. Open camera
-    print("[3/4] Opening camera...")
+    print("[3/5] Opening camera...")
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("       ERROR: Could not open camera!")
@@ -310,15 +311,22 @@ def main():
         return
     print("       Camera opened.")
 
-    # 4. Initialize state
-    print("[4/4] Starting recognition loop...")
-    print("       Collecting 32 frames before first prediction...")
-    print("       Press 'q' to quit.\n")
+    # 4. Arm bridge (gesture -> joints -> backend)
+    print("[4/5] Connecting arm bridge...")
+    bridge = ArmBridge()
+    bridge.start_session()
 
-    # Per-hand state
+    # 5. Initialize state
+    print("[5/5] Starting recognition loop...")
+    print("       Collecting 32 frames before first prediction...")
+    print("       Keys: q=quit  s=start  p=pause  e=estop")
+    print("       Tip: backend ENABLE_SIMULATOR=false when using this script.\n")
+
     buffers = {"Left": deque(maxlen=FRAME_L), "Right": deque(maxlen=FRAME_L)}
     gestures = {"Left": "Collecting...", "Right": "Collecting..."}
     confidences = {"Left": 0.0, "Right": 0.0}
+    last_publish = "—"
+    frame_i = 0
 
     while cap.isOpened():
         success, frame = cap.read()
@@ -332,50 +340,63 @@ def main():
         result = landmarker.detect(mp_image)
 
         display = frame.copy()
-
         active_hands = set()
+        gesture_updated = False
 
         if result.hand_landmarks:
             for i, landmarks in enumerate(result.hand_landmarks):
-                # Determine handedness
                 hand_label = result.handedness[i][0].category_name  # "Left" or "Right"
 
-                # Convert to numpy array (21, 3)
                 pts = np.array([[lm.x, lm.y, lm.z] for lm in landmarks], dtype=np.float32)
                 buffers[hand_label].append(pts)
                 active_hands.add(hand_label)
 
-                # Color: green for right, blue for left
                 color = (100, 255, 100) if hand_label == "Right" else (255, 150, 50)
                 draw_landmarks(display, landmarks, w, h, color)
 
-                # Draw hand label near wrist
                 wrist = landmarks[0]
                 wx, wy = int(wrist.x * w), int(wrist.y * h)
                 cv2.putText(display, hand_label, (wx - 20, wy - 15),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
-                # Run DD-Net inference when buffer full
                 if len(buffers[hand_label]) == FRAME_L:
                     seq = np.stack(list(buffers[hand_label]), axis=0)
                     M, P = preprocess_sequence(seq)
                     preds = model.predict([M, P], verbose=0)[0]
                     top_idx = np.argmax(preds)
                     gestures[hand_label] = GESTURE_NAMES[top_idx]
-                    confidences[hand_label] = preds[top_idx]
+                    confidences[hand_label] = float(preds[top_idx])
+                    gesture_updated = True
 
-                # Draw gesture result above hand label
-                if len(buffers[hand_label]) == FRAME_L:
                     g_text = f"{gestures[hand_label]} ({confidences[hand_label]:.1%})"
                     cv2.putText(display, g_text, (wx - 30, wy - 35),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-        # Clear buffers for hands no longer visible
         for hand in ("Left", "Right"):
             if hand not in active_hands:
                 buffers[hand].clear()
+                gestures[hand] = "Collecting..."
+                confidences[hand] = 0.0
 
-        # Sidebar: buffer status + gesture summary
+        # Map + publish when we have a fresh prediction
+        if gesture_updated:
+            left_ready = len(buffers["Left"]) == FRAME_L
+            right_ready = len(buffers["Right"]) == FRAME_L
+            mapped = bridge.on_gestures(
+                left_g=gestures["Left"] if left_ready else None,
+                right_g=gestures["Right"] if right_ready else None,
+                left_c=confidences["Left"] if left_ready else 0.0,
+                right_c=confidences["Right"] if right_ready else 0.0,
+            )
+            if mapped and mapped.applied:
+                last_publish = f"{mapped.reason} -> {[round(v, 1) for v in mapped.joints]}"
+                print(f"[publish #{bridge.seq}] {last_publish}")
+
+        frame_i += 1
+        if frame_i % 30 == 0:
+            bridge.heartbeat()
+
+        # Sidebar
         y_offset = 30
         for hand in ("Left", "Right"):
             buf_fill = len(buffers[hand])
@@ -387,14 +408,29 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1)
             y_offset += 25
 
-        cv2.imshow("DD-Net Hand Gesture Recognition", display)
+        link = f"HTTP={'OK' if bridge.http_ok else '--'} MQTT={'OK' if bridge.mqtt_ok else '--'}"
+        cv2.putText(display, link, (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        y_offset += 22
+        cv2.putText(display, f"PUB: {last_publish[:70]}", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 255, 180), 1)
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        cv2.imshow("DD-Net Hand -> Arm Bridge", display)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
             break
+        if key == ord("s"):
+            bridge.start_session()
+        if key == ord("p"):
+            bridge._http_json("POST", "/api/control", {"action": "pause"})
+        if key == ord("e"):
+            bridge._http_json("POST", "/api/control", {"action": "estop"})
 
     cap.release()
     cv2.destroyAllWindows()
     landmarker.close()
+    bridge.close()
     print("Done.")
 
 
