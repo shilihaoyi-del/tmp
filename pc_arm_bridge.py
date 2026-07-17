@@ -32,7 +32,7 @@ HANDLED = {
     "Expand",
 }
 
-CONF_THRESHOLD = 0.35
+CONF_THRESHOLD = 0.22
 
 # Step sizes (degrees) — match backend defaults
 STEP_BASE = 8.0
@@ -241,8 +241,7 @@ class ArmBridge:
     def heartbeat(self) -> None:
         ts = self._now_ms()
         if self.use_http:
-            # status poll doubles as liveness; no dedicated HB HTTP route required
-            pass
+            self._http_json("POST", "/api/pc/heartbeat", {"ts_ms": ts, "source": "pc-vision"})
         if self.use_mqtt and self._mqtt:
             try:
                 self._mqtt.publish(
@@ -259,6 +258,8 @@ class ArmBridge:
         right_g: Optional[str],
         left_c: float,
         right_c: float,
+        *,
+        verbose: bool = True,
     ) -> Optional[MapResult]:
         """Map gestures and publish when cooldown allows and mapping applied."""
         # Normalize collecting / empty
@@ -267,11 +268,7 @@ class ArmBridge:
         if not lg and not rg:
             return None
 
-        signature = f"{lg}:{left_c:.2f}|{rg}:{right_c:.2f}"
         now = self._now_ms()
-        if signature == self.last_signature and (now - self.last_apply_ms) < self.apply_cooldown_ms:
-            return None
-        # Also rate-limit even when signature drifts slightly
         if (now - self.last_apply_ms) < self.apply_cooldown_ms:
             return None
 
@@ -283,17 +280,29 @@ class ArmBridge:
             current=self.target,
         )
         if not result.applied:
+            if verbose:
+                print(
+                    f"[skip] L={lg}({left_c:.0%}) R={rg}({right_c:.0%}) "
+                    f"-> {result.reason}  (need Swipe/Pinch/Expand, conf>={CONF_THRESHOLD:.0%})"
+                )
+            self.last_apply_ms = now  # avoid spam every frame
             return result
 
         self.target = result.joints
         self.last_reason = result.reason
         self.last_apply_ms = now
-        self.last_signature = signature
+        self.last_signature = f"{lg}|{rg}|{result.reason}"
         self.seq += 1
-        self._publish_cmd()
+        ok = self._publish_cmd()
+        if verbose:
+            print(
+                f"[publish #{self.seq}] {result.reason} "
+                f"L={lg}({left_c:.0%}) R={rg}({right_c:.0%}) "
+                f"target={[round(v, 1) for v in self.target]} http={'ok' if ok else 'FAIL'}"
+            )
         return result
 
-    def _publish_cmd(self) -> None:
+    def _publish_cmd(self) -> bool:
         payload = {
             "seq": self.seq,
             "ts_ms": self._now_ms(),
@@ -301,11 +310,14 @@ class ArmBridge:
             "target": [round(v, 2) for v in self.target],
             "estop": False,
         }
+        ok = True
         if self.use_http:
-            self._http_json("POST", "/api/cmd", payload)
+            ok = self._http_json("POST", "/api/cmd", payload) and ok
         if self.use_mqtt and self._mqtt:
             try:
                 self._mqtt.publish("arm/pc/cmd", json.dumps(payload), qos=1)
                 self.mqtt_ok = True
             except Exception:
                 self.mqtt_ok = False
+                ok = False
+        return ok

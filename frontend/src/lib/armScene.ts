@@ -200,20 +200,20 @@ export class ArmScene {
   }
 
   setJoints(anglesDeg: number[]) {
-    // smooth toward target for servo feel
+    // Faster follow so Pinch / Swipe are obvious on the viewport
     for (let i = 0; i < 6; i++) {
       const t = anglesDeg[i] ?? 0
-      this.display[i] += (t - this.display[i]) * 0.18
+      this.display[i] += (t - this.display[i]) * 0.45
     }
     const [a1, a2, a3, a4, a5, a6] = this.display
     this.joints.j1.rotation.y = degToRad(a1)
-    // shoulder/elbow operate in the remapped frame
     this.joints.j2.rotation.z = degToRad(a2)
     this.joints.j3.rotation.z = degToRad(a3)
     this.joints.j4.rotation.z = degToRad(a4)
     this.joints.j5.rotation.z = degToRad(a5)
-    const open = THREE.MathUtils.clamp(a6 / 90, 0, 1)
-    const spread = 0.004 + open * 0.018
+    // Gripper: closed(90) -> fingers together; open(0) -> wide
+    const closed = THREE.MathUtils.clamp(a6 / 90, 0, 1)
+    const spread = 0.028 * (1 - closed) + 0.003
     this.joints.gripperL.position.x = -spread
     this.joints.gripperR.position.x = spread
   }

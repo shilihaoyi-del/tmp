@@ -173,6 +173,12 @@ class ArmStateService:
                 self._emit_web_status()
                 return self.snapshot()
 
+            # Auto-arm from IDLE/HOLD so vision demo works without manual START
+            if not self.estop and self.mode in (SystemMode.IDLE, SystemMode.HOLD):
+                self.mode = SystemMode.RUNNING
+                self.fault = ""
+                self._emit_mode()
+
             if is_command_expired(cmd.ts_ms, self._now_ms(), cmd.ttl_ms or self.settings.command_ttl_ms):
                 metrics_store.record_pc_cmd(forwarded=False)
                 self._emit_web_status()
@@ -184,10 +190,27 @@ class ArmStateService:
                 return self.snapshot()
 
             self.target = clamp_joints(list(cmd.target), self.settings)
+            # No real SC171V2 feedback yet: mirror target so web 3D/charts move
+            if not self.device_online:
+                self.actual = list(self.target)
             metrics_store.record_pc_cmd(forwarded=True)
             self._emit_device_cmd()
             self._emit_web_status()
             return self.snapshot()
+
+    async def handle_pc_heartbeat(self, ts_ms: int = 0) -> None:
+        async with self._lock:
+            self._pc_last_hb = time.time()
+            self.pc_online = True
+            if (
+                self.mode == SystemMode.HOLD
+                and self.fault == "pc_timeout"
+                and not self.estop
+            ):
+                self.mode = SystemMode.RUNNING
+                self.fault = ""
+                self._emit_mode()
+                self._emit_web_status()
 
     async def handle_gesture(self, event: GestureEvent) -> SystemStatusResponse:
         """Debug bypass: map gesture on server (not the production path)."""
@@ -233,11 +256,6 @@ class ArmStateService:
                 self.latency_ms = float(status.latency_ms)
             metrics_store.record_device_status(self.latency_ms)
             self._emit_web_status()
-
-    async def handle_pc_heartbeat(self, ts_ms: int = 0) -> None:
-        async with self._lock:
-            self._pc_last_hb = time.time()
-            self.pc_online = True
 
     async def handle_device_heartbeat(self, ts_ms: int = 0) -> None:
         async with self._lock:

@@ -27,7 +27,11 @@ export function useArmConsole() {
       isDemo.value = false
     }
     Object.assign(status, payload)
-    const angles = (payload.actual?.length === 6 ? payload.actual : payload.target) ?? status.actual
+    // Prefer target: without SC171V2 telemetry, actual is often zeros
+    const t = payload.target
+    const a = payload.actual
+    const targetLive = Array.isArray(t) && t.some((v) => Math.abs(v) > 0.01)
+    const angles = targetLive ? t : a?.length === 6 ? a : t
     if (angles?.length === 6) {
       for (let i = 0; i < 6; i++) {
         history[i].push(angles[i])
@@ -139,10 +143,10 @@ export function useArmConsole() {
 
   onMounted(() => {
     void fetchStatus()
-    // MQTT is primary; HTTP is slow fallback only
+    // Always HTTP-poll as backup (MQTT WS may be blocked by cloud security group)
     pollTimer = window.setInterval(() => {
-      if (!connectedMqtt.value) void fetchStatus()
-    }, 2500)
+      void fetchStatus()
+    }, 1000)
     demoTimer = window.setInterval(tickDemo, 50)
     connectMqtt()
   })

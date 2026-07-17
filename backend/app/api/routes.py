@@ -51,6 +51,14 @@ async def post_cmd(cmd: PcCommand) -> SystemStatusResponse:
     return await arm_state.handle_pc_cmd(cmd)
 
 
+@router.post("/pc/heartbeat")
+async def post_pc_heartbeat() -> dict:
+    """Keep PC vision session alive during gesture gaps / skipped classes."""
+    await arm_state.handle_pc_heartbeat()
+    snap = arm_state.snapshot()
+    return {"ok": True, "mode": snap.mode.value, "pc_online": snap.pc_online}
+
+
 @router.post("/gesture", response_model=SystemStatusResponse)
 async def post_gesture(event: GestureEvent) -> SystemStatusResponse:
     """DEBUG ONLY — server-side gesture mapping. Production PC must publish /cmd."""

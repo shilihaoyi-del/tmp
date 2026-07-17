@@ -325,8 +325,13 @@ def main():
     buffers = {"Left": deque(maxlen=FRAME_L), "Right": deque(maxlen=FRAME_L)}
     gestures = {"Left": "Collecting...", "Right": "Collecting..."}
     confidences = {"Left": 0.0, "Right": 0.0}
-    last_publish = "—"
+    last_publish = "waiting gesture..."
     frame_i = 0
+    # Infer every N frames once buffer is full (CPU TF is slow on Windows)
+    INFER_EVERY = 4
+    # Keep last good gesture briefly when hand flickers
+    hold_frames = {"Left": 0, "Right": 0}
+    HOLD_MAX = 18
 
     while cap.isOpened():
         success, frame = cap.read()
@@ -342,6 +347,7 @@ def main():
         display = frame.copy()
         active_hands = set()
         gesture_updated = False
+        frame_i += 1
 
         if result.hand_landmarks:
             for i, landmarks in enumerate(result.hand_landmarks):
@@ -350,6 +356,7 @@ def main():
                 pts = np.array([[lm.x, lm.y, lm.z] for lm in landmarks], dtype=np.float32)
                 buffers[hand_label].append(pts)
                 active_hands.add(hand_label)
+                hold_frames[hand_label] = HOLD_MAX
 
                 color = (100, 255, 100) if hand_label == "Right" else (255, 150, 50)
                 draw_landmarks(display, landmarks, w, h, color)
@@ -359,7 +366,7 @@ def main():
                 cv2.putText(display, hand_label, (wx - 20, wy - 15),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
-                if len(buffers[hand_label]) == FRAME_L:
+                if len(buffers[hand_label]) == FRAME_L and (frame_i % INFER_EVERY == 0):
                     seq = np.stack(list(buffers[hand_label]), axis=0)
                     M, P = preprocess_sequence(seq)
                     preds = model.predict([M, P], verbose=0)[0]
@@ -368,31 +375,38 @@ def main():
                     confidences[hand_label] = float(preds[top_idx])
                     gesture_updated = True
 
+                if len(buffers[hand_label]) == FRAME_L:
                     g_text = f"{gestures[hand_label]} ({confidences[hand_label]:.1%})"
                     cv2.putText(display, g_text, (wx - 30, wy - 35),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
         for hand in ("Left", "Right"):
             if hand not in active_hands:
-                buffers[hand].clear()
-                gestures[hand] = "Collecting..."
-                confidences[hand] = 0.0
+                if hold_frames[hand] > 0:
+                    hold_frames[hand] -= 1
+                else:
+                    buffers[hand].clear()
+                    gestures[hand] = "Collecting..."
+                    confidences[hand] = 0.0
 
-        # Map + publish when we have a fresh prediction
-        if gesture_updated:
-            left_ready = len(buffers["Left"]) == FRAME_L
-            right_ready = len(buffers["Right"]) == FRAME_L
-            mapped = bridge.on_gestures(
-                left_g=gestures["Left"] if left_ready else None,
-                right_g=gestures["Right"] if right_ready else None,
-                left_c=confidences["Left"] if left_ready else 0.0,
-                right_c=confidences["Right"] if right_ready else 0.0,
-            )
-            if mapped and mapped.applied:
-                last_publish = f"{mapped.reason} -> {[round(v, 1) for v in mapped.joints]}"
-                print(f"[publish #{bridge.seq}] {last_publish}")
+        # Map + publish on fresh inference, or periodically while gesture held
+        should_try = gesture_updated or (frame_i % 12 == 0)
+        if should_try:
+            left_ready = len(buffers["Left"]) == FRAME_L and gestures["Left"] != "Collecting..."
+            right_ready = len(buffers["Right"]) == FRAME_L and gestures["Right"] != "Collecting..."
+            if left_ready or right_ready:
+                mapped = bridge.on_gestures(
+                    left_g=gestures["Left"] if left_ready else None,
+                    right_g=gestures["Right"] if right_ready else None,
+                    left_c=confidences["Left"] if left_ready else 0.0,
+                    right_c=confidences["Right"] if right_ready else 0.0,
+                    verbose=True,
+                )
+                if mapped and mapped.applied:
+                    last_publish = f"{mapped.reason} {[round(v, 1) for v in mapped.joints]}"
+                elif mapped and not mapped.applied:
+                    last_publish = f"skip:{mapped.reason}"
 
-        frame_i += 1
         if frame_i % 30 == 0:
             bridge.heartbeat()
 

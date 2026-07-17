@@ -32,7 +32,8 @@ class Settings(BaseSettings):
     mqtt_keepalive: int = 30
 
     # Safety / timing
-    heartbeat_timeout_sec: float = 3.0
+    # Vision PC may pause >3s on skipped classes; keep session warmer
+    heartbeat_timeout_sec: float = 8.0
     command_ttl_ms: int = 500
     control_hz_target: int = 25
 

@@ -30,9 +30,17 @@ const {
 const showBoot = ref(true)
 const actionError = ref('')
 
-const displayAngles = computed(() =>
-  status.actual.some((v) => Math.abs(v) > 0.01) ? status.actual : status.target,
-)
+// Prefer target for viewport: no real SC171V2 feedback yet; actual stays 0
+const displayAngles = computed(() => {
+  const t = status.target || []
+  const a = status.actual || []
+  const targetLive = t.some((v) => Math.abs(v) > 0.01)
+  const actualLive = a.some((v) => Math.abs(v) > 0.01)
+  if (targetLive) return [...t]
+  if (actualLive) return [...a]
+  return t.length === 6 ? [...t] : [0, 0, 0, 0, 0, 0]
+})
+
 
 const modeTone = computed(() => {
   if (status.estop || status.mode === 'estop') return 'danger'
