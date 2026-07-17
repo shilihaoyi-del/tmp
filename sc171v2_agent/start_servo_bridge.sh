@@ -31,7 +31,7 @@ echo aidlux | sudo -S -p '' pip3 install -q -i https://pypi.tuna.tsinghua.edu.cn
 
 mkdir -p "$AGENT_DIR"
 # files expected already copied to /tmp or AGENT_DIR
-for f in uart_protocol.py sc171v2_servo_bridge.py; do
+for f in uart_protocol.py sc171v2_servo_bridge.py hiwonder_servo.py; do
   if [ -f "/tmp/$f" ]; then
     cp -f "/tmp/$f" "$AGENT_DIR/$f"
   fi
@@ -46,7 +46,8 @@ if [ ! -x "$PY" ]; then PY=python3; fi
 
 export PYTHONUNBUFFERED=1
 # run as root so pyusb can claim 1a86:55d4
-echo aidlux | sudo -S -p '' bash -c "PYTHONUNBUFFERED=1 nohup $PY -u $AGENT_DIR/sc171v2_servo_bridge.py --host 121.41.67.80 --port 1883 --uart pyusb --carrier Wi-Fi ${ECHO_SIM:-} >$LOG 2>&1 & echo PID=\$!"
+DRIVE_MODE=${DRIVE:-lobot}
+echo aidlux | sudo -S -p '' bash -c "PYTHONUNBUFFERED=1 nohup $PY -u $AGENT_DIR/sc171v2_servo_bridge.py --host 121.41.67.80 --port 1883 --uart pyusb --carrier Wi-Fi --drive $DRIVE_MODE ${ECHO_SIM:-} >$LOG 2>&1 & echo PID=\$!"
 sleep 2
 echo "===== servo bridge log ====="
 tail -n 50 "$LOG" || true

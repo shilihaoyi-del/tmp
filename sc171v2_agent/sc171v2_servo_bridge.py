@@ -41,6 +41,7 @@ from uart_protocol import (  # noqa: E402
     pack_frame,
     pack_status_reply,
 )
+from hiwonder_servo import hex_frames, pack_arm_joints_deg  # noqa: E402
 
 TOPIC_CMD = "arm/device/cmd"
 TOPIC_MODE = "arm/device/mode"
@@ -118,6 +119,16 @@ class UartLink(object):
             self._usb = dev
             self._ep_out = ep_out
             self._ep_in = ep_in
+            # Critical: set CDC ACM line coding to 115200 8N1 (was missing → STM32/servo bus garbage)
+            try:
+                import struct
+
+                line_coding = struct.pack("<IBBB", 115200, 0, 0, 8)  # baud, 1 stop, no parity, 8 bits
+                dev.ctrl_transfer(0x21, 0x20, 0, 0, line_coding, timeout=1000)
+                dev.ctrl_transfer(0x21, 0x22, 0x0003, 0, timeout=1000)  # DTR|RTS
+                log("[H0-OPEN] CDC line_coding=115200 8N1 DTR/RTS on")
+            except Exception as e:
+                log("[H0-OPEN] CDC line_coding warn: %s" % e)
             self.mode = "pyusb:1a86:55d4"
             log("[H0-OPEN] link=%s ep_out=%s ep_in=%s" % (
                 self.mode,
@@ -239,12 +250,28 @@ class UartLink(object):
 
 
 class ServoBridge(object):
-    def __init__(self, host, port, uart_port, client_id, carrier, hb_interval, echo_sim=False):
+    def __init__(
+        self,
+        host,
+        port,
+        uart_port,
+        client_id,
+        carrier,
+        hb_interval,
+        echo_sim=False,
+        drive="lobot",
+        move_time_ms=500,
+    ):
         self.host = host
         self.port = port
         self.carrier = carrier
         self.hb_interval = hb_interval
         self.echo_sim = echo_sim
+        # drive: lobot = 幻尔 55 55 direct (servos move if USB on servo bus)
+        #        aa55  = only SC171↔STM32 protocol (needs flashed STM32)
+        #        both  = send both
+        self.drive = (drive or "lobot").lower()
+        self.move_time_ms = int(move_time_ms)
         self.link = UartLink(uart_port)
         self.parser = FrameStreamParser()
         self._stop = threading.Event()
@@ -294,7 +321,13 @@ class ServoBridge(object):
             log("[OK] MQTT %s:%s link=%s" % (self.host, self.port, self.link.mode))
             self._publish_hb()
             self._publish_status(force=True)
-            self._trace("H0-READY", mqtt=True, link=self.link.mode, echo_sim=self.echo_sim)
+            self._trace(
+                "H0-READY",
+                mqtt=True,
+                link=self.link.mode,
+                echo_sim=self.echo_sim,
+                drive=self.drive,
+            )
         else:
             log("[ERR] mqtt rc=%s" % rc)
 
@@ -313,37 +346,101 @@ class ServoBridge(object):
             cmd = CMD_HOLD
 
         self.uart_seq = (self.uart_seq + 1) & 0xFF
-        frame = pack_frame(cmd, self.uart_seq, joints, flags)
-        self._trace(
-            "H2-PACK",
-            mqtt_seq=mqtt_seq,
-            uart_seq=self.uart_seq,
-            cmd=cmd,
-            flags=flags,
-            joints=joints,
-            hex=hex_frame(frame),
-        )
+        ok_any = False
         t0 = time.time()
-        ok, err = self.link.write(frame)
-        dt = (time.time() - t0) * 1000.0
-        if ok:
-            self.tx_uart += 1
-            self._pending_rtt = (self.uart_seq, t0, list(joints))
+
+        # --- AA55 path (STM32 firmware required for motion) ---
+        if self.drive in ("aa55", "both") and not estop:
+            frame = pack_frame(cmd, self.uart_seq, joints, flags)
             self._trace(
-                "H3-UART",
-                ok=True,
-                bytes=len(frame),
-                sink=self.link.mode,
-                dt_ms=round(dt, 2),
-                tx_ok=self.link.tx_ok,
+                "H2-PACK",
+                mqtt_seq=mqtt_seq,
+                uart_seq=self.uart_seq,
+                cmd=cmd,
+                flags=flags,
+                joints=joints,
+                protocol="aa55",
+                hex=hex_frame(frame),
             )
-            if self.echo_sim and cmd == CMD_JOINT:
-                # Local sim of STM32 STATUS reply (same 0x81 frame STM32 should send)
-                echo = pack_status_reply(self.uart_seq, joints, moving=False)
-                self._handle_rx_bytes(echo, source="echo_sim")
-        else:
-            self._trace("H3-UART", ok=False, err=err, sink=self.link.mode, dt_ms=round(dt, 2))
-        return ok
+            ok, err = self.link.write(frame)
+            dt = (time.time() - t0) * 1000.0
+            if ok:
+                ok_any = True
+                self.tx_uart += 1
+                self._pending_rtt = (self.uart_seq, t0, list(joints))
+                self._trace(
+                    "H3-UART",
+                    ok=True,
+                    protocol="aa55",
+                    bytes=len(frame),
+                    sink=self.link.mode,
+                    dt_ms=round(dt, 2),
+                    tx_ok=self.link.tx_ok,
+                )
+                if self.echo_sim and cmd == CMD_JOINT:
+                    echo = pack_status_reply(self.uart_seq, joints, moving=False)
+                    self._handle_rx_bytes(echo, source="echo_sim")
+            else:
+                self._trace(
+                    "H3-UART",
+                    ok=False,
+                    protocol="aa55",
+                    err=err,
+                    sink=self.link.mode,
+                    dt_ms=round(dt, 2),
+                )
+        elif self.drive in ("aa55", "both") and estop:
+            frame = pack_frame(CMD_ESTOP, self.uart_seq, joints, FLAG_ESTOP)
+            ok, err = self.link.write(frame)
+            ok_any = ok_any or ok
+            self._trace("H3-UART", ok=ok, protocol="aa55", kind="estop", err=err)
+
+        # --- Lobot 55 55 path (direct bus drive; USB must be on servo UART) ---
+        if self.drive in ("lobot", "both") and cmd == CMD_JOINT and not estop:
+            frames = pack_arm_joints_deg(joints, self.move_time_ms)
+            self._trace(
+                "H2-PACK",
+                mqtt_seq=mqtt_seq,
+                uart_seq=self.uart_seq,
+                protocol="lobot",
+                joints=joints,
+                move_time_ms=self.move_time_ms,
+                hex=hex_frames(frames),
+            )
+            lobot_ok = True
+            n = 0
+            for fr in frames:
+                ok, err = self.link.write(fr)
+                if not ok:
+                    lobot_ok = False
+                    self._trace("H3-UART", ok=False, protocol="lobot", err=err)
+                    break
+                n += len(fr)
+                time.sleep(0.002)
+            dt = (time.time() - t0) * 1000.0
+            if lobot_ok:
+                ok_any = True
+                self.tx_uart += 1
+                # Without STM32 STATUS, mirror target so cloud "actual" updates
+                self.actual = list(joints)
+                self._trace(
+                    "H3-UART",
+                    ok=True,
+                    protocol="lobot",
+                    bytes=n,
+                    frames=len(frames),
+                    sink=self.link.mode,
+                    dt_ms=round(dt, 2),
+                    note="direct_hiwonder_bus",
+                )
+                if self.echo_sim:
+                    echo = pack_status_reply(self.uart_seq, joints, moving=False)
+                    self._handle_rx_bytes(echo, source="echo_sim")
+                else:
+                    # Publish mirrored actual so UI shows motion command accepted
+                    self._publish_status(force=True)
+
+        return ok_any
 
     def _handle_rx_bytes(self, data, source="usb"):
         if not data:
@@ -510,7 +607,10 @@ class ServoBridge(object):
             self._trace("H5-UP", boot=True, **{k: payload[k] for k in ("seq", "uart_mode", "stm32_online")})
 
     def start(self):
-        log("[..] mqtt://%s:%s link=%s echo_sim=%s" % (self.host, self.port, self.link.mode, self.echo_sim))
+        log(
+            "[..] mqtt://%s:%s link=%s echo_sim=%s drive=%s"
+            % (self.host, self.port, self.link.mode, self.echo_sim, self.drive)
+        )
         self.client.connect(self.host, self.port, keepalive=30)
         self.client.loop_start()
         rx = threading.Thread(target=self._rx_loop, name="uart-rx", daemon=True)
@@ -522,13 +622,15 @@ class ServoBridge(object):
             with self._lock:
                 joints = list(self.target)
                 estop = self.estop
-            self.uart_seq = (self.uart_seq + 1) & 0xFF
-            cmd = CMD_ESTOP if estop else CMD_HEARTBEAT
-            flags = FLAG_ESTOP if estop else 0
-            frame = pack_frame(cmd, self.uart_seq, joints, flags)
-            ok, err = self.link.write(frame)
-            if not ok:
-                self._trace("H3-UART", ok=False, kind="heartbeat", err=err)
+            # Only AA55 path needs UART heartbeat; Lobot direct drive skips (bus noise)
+            if self.drive in ("aa55", "both"):
+                self.uart_seq = (self.uart_seq + 1) & 0xFF
+                cmd = CMD_ESTOP if estop else CMD_HEARTBEAT
+                flags = FLAG_ESTOP if estop else 0
+                frame = pack_frame(cmd, self.uart_seq, joints, flags)
+                ok, err = self.link.write(frame)
+                if not ok:
+                    self._trace("H3-UART", ok=False, kind="heartbeat", protocol="aa55", err=err)
 
     def stop(self):
         self._stop.set()
@@ -557,9 +659,24 @@ def main():
         action="store_true",
         help="simulate STM32 STATUS echo locally (path self-test)",
     )
+    ap.add_argument(
+        "--drive",
+        default="lobot",
+        choices=["lobot", "aa55", "both"],
+        help="lobot=幻尔直驱(默认,舵机要动); aa55=仅STM32协议; both=两者都发",
+    )
+    ap.add_argument("--move-time-ms", type=int, default=500, help="Lobot move time ms")
     args = ap.parse_args()
     bridge = ServoBridge(
-        args.host, args.port, args.uart, args.client_id, args.carrier, args.hb_interval, args.echo_sim
+        args.host,
+        args.port,
+        args.uart,
+        args.client_id,
+        args.carrier,
+        args.hb_interval,
+        args.echo_sim,
+        args.drive,
+        args.move_time_ms,
     )
 
     def _sig(s, f):
