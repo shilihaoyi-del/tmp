@@ -54,3 +54,4 @@ void arm_uart_make_status_reply(const arm_uart_frame_t *downlink,
 #endif
 
 #endif /* ARM_UART_REPLY_H */
+
