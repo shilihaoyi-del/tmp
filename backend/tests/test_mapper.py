@@ -12,15 +12,15 @@ def test_mapping():
 
     ev = GestureEvent(seq=1, ts_ms=0, gesture="Swipe Right", hand=HandSide.RIGHT, confidence=0.9)
     r = map_gesture_to_joints(ev, joints, s)
-    assert r.applied and r.joints[0] == s.step_base
+    assert r.applied and r.pose_delta and r.pose_delta["y"] > 0
 
     ev = GestureEvent(seq=2, ts_ms=0, gesture="Swipe Up", hand=HandSide.RIGHT, confidence=0.9)
-    r = map_gesture_to_joints(ev, r.joints, s)
-    assert r.applied and r.joints[1] == s.step_shoulder
+    r = map_gesture_to_joints(ev, joints, s)
+    assert r.applied and r.pose_delta and r.pose_delta["z"] > 0
 
     ev = GestureEvent(seq=3, ts_ms=0, gesture="Swipe Up", hand=HandSide.LEFT, confidence=0.9)
-    r = map_gesture_to_joints(ev, r.joints, s)
-    assert r.applied and r.joints[2] == s.step_elbow
+    r = map_gesture_to_joints(ev, joints, s)
+    assert r.applied and r.pose_delta and r.pose_delta["x"] > 0
 
     ev = GestureEvent(
         seq=4,
@@ -33,30 +33,32 @@ def test_mapping():
         left_confidence=0.9,
         right_confidence=0.9,
     )
-    r = map_gesture_to_joints(ev, r.joints, s)
-    assert r.applied and "wrist_pitch" in r.reason
+    r = map_gesture_to_joints(ev, joints, s)
+    assert r.applied and "pitch" in r.reason
 
     ev = GestureEvent(seq=5, ts_ms=0, gesture="Swipe V", hand=HandSide.LEFT, confidence=0.9)
-    r = map_gesture_to_joints(ev, r.joints, s)
-    assert r.applied and r.joints[4] == s.step_wrist_roll
+    r = map_gesture_to_joints(ev, joints, s)
+    assert r.applied and r.pose_delta and r.pose_delta["roll"] > 0
 
     ev = GestureEvent(seq=6, ts_ms=0, gesture="Pinch", hand=HandSide.RIGHT, confidence=0.9)
-    r = map_gesture_to_joints(ev, r.joints, s)
-    assert r.joints[5] == s.gripper_close
+    r = map_gesture_to_joints(ev, joints, s)
+    assert r.gripper == s.gripper_close
 
     ev = GestureEvent(seq=7, ts_ms=0, gesture="Expand", hand=HandSide.RIGHT, confidence=0.9)
-    r = map_gesture_to_joints(ev, r.joints, s)
-    assert r.joints[5] == s.gripper_open
+    r = map_gesture_to_joints(ev, joints, s)
+    assert r.gripper == s.gripper_open
 
     ev = GestureEvent(seq=8, ts_ms=0, gesture="Tap", hand=HandSide.RIGHT, confidence=0.9)
-    r = map_gesture_to_joints(ev, r.joints, s)
+    r = map_gesture_to_joints(ev, joints, s)
     assert not r.applied
 
     clamped = clamp_joints([999.0, -999.0, 0, 0, 0, 200.0], s)
     assert clamped[0] == s.joint_max[0]
     assert clamped[1] == s.joint_min[1]
     assert clamped[5] == s.joint_max[5]
-    print("OK: gesture mapping + clamp")
+    # Shoulder soft max kept well below mechanical ~+18° stop
+    assert s.joint_max[1] <= -20.0
+    print("OK: gesture mapping + JetArm soft clamp")
 
 
 if __name__ == "__main__":

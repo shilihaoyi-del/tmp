@@ -119,4 +119,3 @@ bool arm_uart_parser_feed(arm_uart_parser_t *p, uint8_t byte, arm_uart_frame_t *
     p->len = 0;
     return arm_uart_decode(p->buf, out);
 }
-

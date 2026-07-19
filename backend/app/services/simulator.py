@@ -92,6 +92,13 @@ class HardwareSimulator:
                 self._seq += 1
                 tick += 1
 
+                # Yield to live free-move telemetry from SC171 (do not overwrite)
+                if self.state.source == "free_move":
+                    age = time.time() - float(getattr(self.state, "_device_last_hb", 0.0) or 0.0)
+                    if age < 5.0:
+                        await asyncio.sleep(period)
+                        continue
+
                 # PC side packaging: heartbeat + joint cmd
                 await self.state.handle_pc_heartbeat(self._now_ms())
                 if self.state.mode == SystemMode.RUNNING and not self.state.estop:

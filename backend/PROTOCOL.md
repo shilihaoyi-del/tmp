@@ -21,7 +21,10 @@
 ========================================================================
 主数据流（生产）
 
-  PC --arm/pc/cmd--> Broker --arm/device/cmd--> SC171V2 --> STM32
+  PC --arm/pc/cmd--> Broker --arm/device/cmd--> SC171V2
+       (pose_delta / pose / target)
+    → SC171 IK（位姿）→ JetArm AA55 @ 1Mbps → STM32 USART1 → 舵机
+    → 读位置 → FK → status.pose
   SC171V2 --arm/device/status--> Broker --arm/web/status--> Web
 
 辅助：
@@ -31,16 +34,22 @@
   arm/pc/gesture     **DEBUG ONLY**（服务器映射，非正式路径）
 
 关节顺序（度）: [base, shoulder, elbow, wrist_pitch, wrist_roll, gripper]
+软限位（JetArm）：base±120.2，shoulder -180.2~0.2，elbow±120.2，
+  wrist_pitch -200.2~20.2，wrist_roll±120.2，gripper 0~90（见 joint_protection.py）
+位姿单位: x/y/z 米；roll/pitch/yaw 弧度
 建议发送频率: 20–30 Hz
+SC171↔STM32: 商家 JetArm 协议，USB Type-C = USART1，**1000000** baud
 
 ========================================================================
-arm/pc/cmd（主路径）
+arm/pc/cmd（主路径 — 手势优先发 pose_delta）
 
 {
   "seq": 12,
   "ts_ms": 1710000000123,
   "ttl_ms": 500,
   "target": [10, 20, -15, 0, 5, 90],
+  "pose_delta": {"x": 0.0, "y": 0.02, "z": 0.0, "roll": 0, "pitch": 0, "yaw": 0},
+  "gripper": 90,
   "estop": false
 }
 
@@ -56,6 +65,7 @@ arm/device/cmd（转发至 SC171V2）
   "ttl_ms": 500,
   "mode": "running",
   "target": [10, 20, -15, 0, 5, 90],
+  "pose_delta": {"x": 0, "y": 0.02, "z": 0, "roll": 0, "pitch": 0, "yaw": 0},
   "estop": false
 }
 
@@ -69,6 +79,9 @@ arm/device/status（SC171V2 上报）
   "mode": "running",
   "target": [10, 20, -15, 0, 5, 90],
   "actual": [9.5, 19.8, -14.5, 0.1, 4.9, 88],
+  "pose": {"x": 0.12, "y": 0.01, "z": 0.25, "roll": 0, "pitch": 0.1, "yaw": 0.2},
+  "ik_ok": true,
+  "servo_online": [true, true, true, true, true, false],
   "fault": "",
   "estop": false,
   "carrier": "5G"

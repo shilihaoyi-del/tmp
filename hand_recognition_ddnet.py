@@ -312,14 +312,15 @@ def main():
     print("       Camera opened.")
 
     # 4. Arm bridge (gesture -> joints -> backend)
-    print("[4/5] Connecting arm bridge...")
+    # Do NOT start_session here — vision runs idle until user presses 's' / web START.
+    print("[4/5] Connecting arm bridge (idle, arm will not move yet)...")
     bridge = ArmBridge()
-    bridge.start_session()
 
     # 5. Initialize state
     print("[5/5] Starting recognition loop...")
     print("       Collecting 32 frames before first prediction...")
-    print("       Keys: q=quit  s=start  p=pause  e=estop")
+    print("       Keys: q=quit  s=start(开始驱动臂)  p=pause  e=estop")
+    print("       Tip: 开视觉默认不动臂；确认姿态后按 s 或网页 START 再驱动。")
     print("       Tip: backend ENABLE_SIMULATOR=false when using this script.\n")
 
     buffers = {"Left": deque(maxlen=FRAME_L), "Right": deque(maxlen=FRAME_L)}
@@ -422,7 +423,11 @@ def main():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1)
             y_offset += 25
 
-        link = f"HTTP={'OK' if bridge.http_ok else '--'} MQTT={'OK' if bridge.mqtt_ok else '--'}"
+        drive = "ARM:ON" if bridge.drive_enabled else "ARM:OFF(按s启动)"
+        link = (
+            f"HTTP={'OK' if bridge.http_ok else '--'} "
+            f"MQTT={'OK' if bridge.mqtt_ok else '--'}  {drive}"
+        )
         cv2.putText(display, link, (10, y_offset),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
         y_offset += 22
@@ -438,8 +443,10 @@ def main():
             bridge.start_session()
         if key == ord("p"):
             bridge._http_json("POST", "/api/control", {"action": "pause"})
+            bridge.refresh_drive_gate(force=True)
         if key == ord("e"):
             bridge._http_json("POST", "/api/control", {"action": "estop"})
+            bridge.refresh_drive_gate(force=True)
 
     cap.release()
     cv2.destroyAllWindows()

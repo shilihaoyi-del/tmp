@@ -37,9 +37,14 @@ class Settings(BaseSettings):
     command_ttl_ms: int = 500
     control_hz_target: int = 25
 
-    # Joint soft limits (degrees): base, shoulder, elbow, wrist_pitch, wrist_roll, gripper
-    joint_min: list[float] = Field(default_factory=lambda: [-180.0, -90.0, -135.0, -90.0, -180.0, 0.0])
-    joint_max: list[float] = Field(default_factory=lambda: [180.0, 90.0, 135.0, 90.0, 180.0, 90.0])
+    # Joint soft limits (degrees) — bench-tightened vs JetArm maps (see joint_protection.py)
+    # base, shoulder, elbow, wrist_pitch, wrist_roll, gripper
+    joint_min: list[float] = Field(
+        default_factory=lambda: [-70.0, -132.12, -70.0, -183.0, -70.0, 15.0]
+    )
+    joint_max: list[float] = Field(
+        default_factory=lambda: [90.6, -25.0, 70.0, -35.0, 70.0, 75.0]
+    )
 
     # Gesture -> joint step sizes (degrees per event)
     step_base: float = 8.0
@@ -47,8 +52,8 @@ class Settings(BaseSettings):
     step_elbow: float = 6.0
     step_wrist_pitch: float = 5.0
     step_wrist_roll: float = 8.0
-    gripper_open: float = 0.0
-    gripper_close: float = 90.0
+    gripper_open: float = 15.0
+    gripper_close: float = 75.0
 
     # In-process mock for PC + SC171V2 when hardware is unavailable
     enable_simulator: bool = True

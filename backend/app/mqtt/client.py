@@ -60,8 +60,10 @@ class MqttBridge:
         if not self._client:
             return
         data = json.dumps(payload, ensure_ascii=False)
+        # High-rate telemetry: qos0 reduces ACK latency; commands stay qos1
+        qos = 0 if topic in (topics.WEB_STATUS, topics.DEVICE_STATUS) else 1
         try:
-            await self._client.publish(topic, data.encode("utf-8"), qos=1, retain=retain)
+            await self._client.publish(topic, data.encode("utf-8"), qos=qos, retain=retain)
             metrics_store.record_mqtt_publish(True)
         except Exception:
             metrics_store.record_mqtt_publish(False)

@@ -23,8 +23,9 @@ TOPIC_MODE = "arm/device/mode"
 TOPIC_STATUS = "arm/device/status"
 TOPIC_HB = "arm/device/heartbeat"
 
-JOINT_MIN = [-180.0, -90.0, -135.0, -90.0, -180.0, 0.0]
-JOINT_MAX = [180.0, 90.0, 135.0, 90.0, 180.0, 90.0]
+# Soft limits — JetArm jetarm_6dof_params.py
+JOINT_MIN = [-120.2, -180.2, -120.2, -200.2, -120.2, 0.0]
+JOINT_MAX = [120.2, 0.2, 120.2, 20.2, 120.2, 90.0]
 
 
 def clamp_joints(joints):

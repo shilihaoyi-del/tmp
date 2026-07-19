@@ -1,7 +1,8 @@
 #include "hiwonder_servo.h"
 
-static const float HW_JMIN[6] = {-180.f, -90.f, -135.f, -90.f, -180.f, 0.f};
-static const float HW_JMAX[6] = { 180.f,  90.f,  135.f,  90.f,  180.f, 90.f};
+/* Soft limits — JetArm jetarm_6dof_params.py */
+static const float HW_JMIN[6] = {-120.2f, -180.2f, -120.2f, -200.2f, -120.2f, 0.f};
+static const float HW_JMAX[6] = { 120.2f,    0.2f,  120.2f,   20.2f,  120.2f, 90.f};
 static const uint8_t HW_IDS[6] = {1, 2, 3, 4, 5, 6};
 
 static int16_t s_last_centi[6];

@@ -47,13 +47,27 @@ class JointAngles(BaseModel):
     )
 
 
+class Pose6(BaseModel):
+    """Cartesian pose (m) + RPY (rad)."""
+
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+    roll: float = 0.0
+    pitch: float = 0.0
+    yaw: float = 0.0
+
+
 class PcCommand(BaseModel):
-    """Primary PC -> cloud joint command (forwarded to SC171V2)."""
+    """Primary PC -> cloud command (joints and/or pose_delta for SC171 IK)."""
 
     seq: int
     ts_ms: int
     ttl_ms: int = 500
-    target: list[float] = Field(..., min_length=6, max_length=6)
+    target: list[float] = Field(default_factory=lambda: [0.0] * 6, min_length=6, max_length=6)
+    pose: Optional[Pose6] = None
+    pose_delta: Optional[Pose6] = None
+    gripper: Optional[float] = None
     estop: bool = False
 
 
@@ -64,7 +78,10 @@ class DeviceCommand(BaseModel):
     ts_ms: int
     ttl_ms: int = 500
     mode: SystemMode
-    target: list[float] = Field(..., min_length=6, max_length=6)
+    target: list[float] = Field(default_factory=lambda: [0.0] * 6, min_length=6, max_length=6)
+    pose: Optional[Pose6] = None
+    pose_delta: Optional[Pose6] = None
+    gripper: Optional[float] = None
     estop: bool = False
 
 
@@ -78,6 +95,9 @@ class DeviceStatus(BaseModel):
     mode: SystemMode = SystemMode.IDLE
     target: list[float] = Field(default_factory=lambda: [0.0] * 6)
     actual: list[float] = Field(default_factory=lambda: [0.0] * 6)
+    pose: Optional[Pose6] = None
+    ik_ok: bool = True
+    servo_online: list[bool] = Field(default_factory=lambda: [False] * 6)
     fault: str = ""
     estop: bool = False
     latency_ms: float = 0.0
@@ -123,6 +143,9 @@ class SystemStatusResponse(BaseModel):
 
     target: list[float]
     actual: list[float]
+    pose: Optional[Pose6] = None
+    ik_ok: bool = True
+    servo_online: list[bool] = Field(default_factory=lambda: [False] * 6)
     fault: str
     estop: bool
     latency_ms: float

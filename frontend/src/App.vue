@@ -10,6 +10,7 @@ import JointChart from '@/components/JointChart.vue'
 import ControlDeck from '@/components/ControlDeck.vue'
 import ScenarioMetrics from '@/components/ScenarioMetrics.vue'
 import { useArmConsole } from '@/composables/useArmConsole'
+import { VIEW_HOME_JOINTS_DEG } from '@/lib/kinematics'
 import type { ControlAction } from '@/types/arm'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -30,15 +31,17 @@ const {
 const showBoot = ref(true)
 const actionError = ref('')
 
-// Prefer target for viewport: no real SC171V2 feedback yet; actual stays 0
+// Prefer actual when live. Idle / no telemetry → taught home so mesh is Z-axis straight line.
 const displayAngles = computed(() => {
   const t = status.target || []
   const a = status.actual || []
-  const targetLive = t.some((v) => Math.abs(v) > 0.01)
-  const actualLive = a.some((v) => Math.abs(v) > 0.01)
-  if (targetLive) return [...t]
+  const deviceOnline = Boolean(status.device_online || status.stm32_online)
+  const actualLive = a.length === 6 && a.some((v) => Math.abs(v) > 0.01)
+  const targetLive = t.length === 6 && t.some((v) => Math.abs(v) > 0.01)
+  if (actualLive && (deviceOnline || status.source === 'free_move')) return [...a]
   if (actualLive) return [...a]
-  return t.length === 6 ? [...t] : [0, 0, 0, 0, 0, 0]
+  if (targetLive) return [...t]
+  return [...VIEW_HOME_JOINTS_DEG]
 })
 
 
@@ -112,9 +115,13 @@ onMounted(() => {
           tone="warn"
         />
         <SensorTag
-          v-else-if="status.source"
+          v-else-if="status.source || status.carrier"
           label="SOURCE"
-          :value="String(status.source).toUpperCase()"
+          :value="
+            String(status.carrier || '').toUpperCase() === 'FREE_MOVE'
+              ? 'FREE_MOVE'
+              : String(status.source || 'LIVE').toUpperCase()
+          "
           :tone="status.source === 'sim' || status.source === 'SIM' ? 'warn' : 'active'"
         />
         <SensorTag
@@ -200,11 +207,18 @@ onMounted(() => {
 
     <section class="main-grid">
       <div class="reveal col-span-2">
-        <ArmViewport :angles="displayAngles" />
+        <ArmViewport
+          :angles="displayAngles"
+          :snap="
+            Boolean(status.device_online || status.stm32_online) ||
+            String(status.carrier || '').toUpperCase() === 'FREE_MOVE' ||
+            String(status.source || '').toLowerCase() === 'free_move'
+          "
+        />
       </div>
       <div class="stack">
         <div class="reveal">
-          <JointPanel :target="status.target" :actual="status.actual" />
+          <JointPanel :target="displayAngles" :actual="displayAngles" />
         </div>
         <div class="reveal">
           <ControlDeck :mode="status.mode" :estop="status.estop" @action="onAction" />

@@ -70,4 +70,3 @@ bool arm_uart_parser_feed(arm_uart_parser_t *p, uint8_t byte, arm_uart_frame_t *
 #endif
 
 #endif /* ARM_UART_PROTOCOL_H */
-

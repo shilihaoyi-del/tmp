@@ -21,17 +21,48 @@ export function useArmConsole() {
   let client: MqttClient | null = null
   const MAX_HISTORY = 120
   let demoT = 0
+  let lastMqttAt = 0
+  let lastSeq = -1
 
-  function applyStatus(payload: Partial<SystemStatus>, fromDemo = false) {
+  function applyStatus(
+    payload: Partial<SystemStatus>,
+    fromDemo = false,
+    via: 'http' | 'mqtt' | 'demo' = 'http',
+  ) {
     if (!fromDemo) {
       isDemo.value = false
     }
+    // Prefer fresh MQTT; ignore stale HTTP that would add ~1s lag
+    if (via === 'http' && connectedMqtt.value && Date.now() - lastMqttAt < 800) {
+      return
+    }
+    if (typeof payload.seq === 'number') {
+      if (payload.seq < lastSeq && via === 'http') return
+      lastSeq = payload.seq
+    }
+    if (via === 'mqtt') lastMqttAt = Date.now()
+
+    // Old cloud builds keep source=live while free_move_cloud sets carrier=FREE_MOVE
+    const carrierFree =
+      String(payload.carrier || status.carrier || '').toUpperCase() === 'FREE_MOVE'
+    if (carrierFree) {
+      payload = {
+        ...payload,
+        source: 'free_move',
+        last_gesture: payload.last_gesture || 'FREE_MOVE',
+        target:
+          Array.isArray(payload.actual) && payload.actual.length === 6
+            ? payload.actual
+            : payload.target,
+      }
+    }
     Object.assign(status, payload)
-    // Prefer target: without SC171V2 telemetry, actual is often zeros
     const t = payload.target
     const a = payload.actual
+    const actualLive = Array.isArray(a) && a.some((v) => Math.abs(v) > 0.01)
     const targetLive = Array.isArray(t) && t.some((v) => Math.abs(v) > 0.01)
-    const angles = targetLive ? t : a?.length === 6 ? a : t
+    // Charts follow the same rule as the 3D view: actual first when live
+    const angles = actualLive ? a : targetLive ? t : a?.length === 6 ? a : t
     if (angles?.length === 6) {
       for (let i = 0; i < 6; i++) {
         history[i].push(angles[i])
@@ -84,7 +115,7 @@ export function useArmConsole() {
       const res = await fetch(`${API_BASE}/api/status`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = (await res.json()) as SystemStatus
-      applyStatus(data)
+      applyStatus(data, false, 'http')
       connectedHttp.value = true
       lastError.value = ''
     } catch (err) {
@@ -104,7 +135,7 @@ export function useArmConsole() {
       throw new Error(text || `control_${res.status}`)
     }
     const data = (await res.json()) as SystemStatus
-    applyStatus(data)
+    applyStatus(data, false, 'http')
     return data
   }
 
@@ -112,8 +143,8 @@ export function useArmConsole() {
     try {
       client = mqtt.connect(MQTT_URL, {
         protocolVersion: 4,
-        reconnectPeriod: 3000,
-        connectTimeout: 5000,
+        reconnectPeriod: 2000,
+        connectTimeout: 4000,
       })
       client.on('connect', () => {
         connectedMqtt.value = true
@@ -128,7 +159,7 @@ export function useArmConsole() {
       client.on('message', (_topic, payload) => {
         try {
           const data = JSON.parse(payload.toString()) as SystemStatus
-          applyStatus(data)
+          applyStatus(data, false, 'mqtt')
         } catch {
           /* ignore */
         }
@@ -143,10 +174,15 @@ export function useArmConsole() {
 
   onMounted(() => {
     void fetchStatus()
-    // Always HTTP-poll as backup (MQTT WS may be blocked by cloud security group)
+    // Fast HTTP when MQTT WS blocked; otherwise MQTT leads and HTTP is backup
     pollTimer = window.setInterval(() => {
+      const freeMove =
+        String(status.carrier || '').toUpperCase() === 'FREE_MOVE' ||
+        String(status.source || '').toLowerCase() === 'free_move'
+      if (connectedMqtt.value && !freeMove) return
+      if (connectedMqtt.value && Date.now() - lastMqttAt < 400) return
       void fetchStatus()
-    }, 1000)
+    }, 200)
     demoTimer = window.setInterval(tickDemo, 50)
     connectMqtt()
   })

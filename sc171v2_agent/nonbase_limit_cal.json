@@ -1,0 +1,14 @@
+{
+  "kind": "non_base_extremes",
+  "note": "User: this pose is max travel for joints except base. Mid-range elbow/wrist_r/gripper not narrowed.",
+  "measured": {
+    "base": {"deg": -0.72, "pulse": 497, "action": "unchanged"},
+    "shoulder": {"deg": -135.12, "pulse": 688, "soft_min": -132.12},
+    "elbow": {"deg": -36.48, "pulse": 652, "action": "unchanged_midrange"},
+    "wrist_p": {"deg": -204.48, "pulse": 977, "soft_min": -183.0, "note": "physical beyond pulse soft 900≈-186°"},
+    "wrist_r": {"deg": -4.8, "pulse": 480, "action": "unchanged_midrange"},
+    "gripper": {"action": "offline_unchanged"}
+  },
+  "soft_min": [-70.0, -132.12, -70.0, -183.0, -70.0, 15.0],
+  "soft_max": [90.6, -25.0, 70.0, -35.0, 70.0, 75.0]
+}

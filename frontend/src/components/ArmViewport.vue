@@ -2,19 +2,19 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArmScene } from '@/lib/armScene'
 
-const props = defineProps<{ angles: number[] }>()
+const props = defineProps<{ angles: number[]; snap?: boolean }>()
 const host = ref<HTMLElement | null>(null)
 let scene: ArmScene | null = null
 
 onMounted(() => {
   if (!host.value) return
   scene = new ArmScene(host.value)
-  scene.setJoints(props.angles)
+  scene.setJoints(props.angles, { snap: props.snap })
 })
 
 watch(
-  () => [...props.angles],
-  (v) => scene?.setJoints(v),
+  () => [...props.angles, props.snap ? 1 : 0],
+  () => scene?.setJoints(props.angles, { snap: !!props.snap }),
   { deep: true },
 )
 
@@ -27,11 +27,11 @@ onUnmounted(() => {
 <template>
   <div class="viewport panel">
     <div class="panel-header">
-      <span>VIEWPORT // SC171V2 COMMAND EFFECT</span>
+      <span>VIEWPORT // JETARM 6DOF · URDF</span>
       <span class="hint">DRAG TO ORBIT</span>
     </div>
     <div ref="host" class="canvas-host" />
-    <p class="comment footer">arm motion proves module command delivery · urdf kinematics preview</p>
+    <p class="comment footer">procedural mesh from jetarm_6dof_description · joints match urdf origins</p>
   </div>
 </template>
 

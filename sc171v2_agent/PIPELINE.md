@@ -1,77 +1,79 @@
-# 真机闭环：SC171V2 → STM32 → 总线舵机 → STATUS
+# 真机闭环：SC171V2 → JetArm USART1 → 舵机 → FK 姿态 → 云端
 
-## 数据流
+## 目标数据流
 
 ```
-手势识别(PC) → MQTT → SC171V2
-                         │ USART3 PD8=TX / PD9=RX @ 115200
-                         ▼
-                      STM32F407
-                         │ ① 立刻 STATUS(0x81) 镜像关节 + 回显 SEQ
-                         │ ② USART6 写幻尔总线舵机（需先 LOAD）
-                         ▼
-                     舵机 ID1..6（P6/P7 插座并联同一根 SERVO_SIGNAL）
+云 MQTT arm/device/cmd  (target / pose / pose_delta)
+    → SC171V2 IK（若有 pose*）
+    → JetArm AA55 BUS_SERVO @ 1 Mbps（USB Type-C = STM32 USART1）
+    → 商家固件驱幻尔总线舵机
+    → 读位置回包
+    → SC171V2 FK → pose
+    → MQTT arm/device/status（actual + pose + servo_online）
 ```
 
-## 硬件（Ros Robot Controller V1.2）
+## 分工
 
-| 功能 | 引脚 |
+| 设备 | 职责 |
 |------|------|
-| SC171V2 | USART3：`PD8=TX`，`PD9=RX`，115200 |
-| 总线舵机 | USART6：`PC6=TX`，`PC7=RX` |
-| 半双工使能 | `PE7_TX_EN`，`PE8_RX_EN`（SN74LVC2G125，OE 低有效） |
-| 舵机插座 P6 / P7 | **同一总线**（不是两路串口），Pin2=`VIN`，Pin3=`SERVO_SIGNAL` |
+| **云服务器** | 转发 cmd、汇总 status |
+| **SC171V2** | JetArm 协议解析、FK/IK、MQTT 桥 |
+| **STM32（商家 JetArm 固件）** | USART1 packet → 总线舵机 |
+| **幻尔舵机** | ID 1–6 |
 
-注意：
+## 线协议（商家）
 
-- LED1 是 5V 电源灯，不代表程序或舵机状态
-- 舵机动力看插座**中间脚 VIN**（电池电压），不是 5V
-- 上电默认卸力，运动前必须 `LOAD(cmd=31)`
-- 当前实测常见：总线上只有某个 ID（如 ID6）在线时，需用调试器改 ID / 检查菊花链信号线
+- 波特率 **1000000** 8N1
+- 帧：`AA 55 | func | len | data | CRC8`
+- 总线舵机 `func=0x05`：写位置 `0x01`、读位置 `0x05`、LOAD `0x0C`
 
-## STM32 要加入工程的文件
+## SC171V2 关键文件
 
-目录：`sc171v2_uart_protocol/stm32/`
+- `jetarm_packet.py` — 解析/组帧
+- `arm_kinematics.py` — FK / 数值 IK
+- `sc171v2_servo_bridge.py` — MQTT ↔ UART
+- `hiwonder_servo.py` — 度 ↔ 0..1000 脉冲
 
-1. `arm_uart_protocol.h/.c` — SC171 ↔ STM32 定长 20 字节 + CRC16  
-2. `arm_uart_reply.h/.c` — STATUS 回包  
-3. `hiwonder_servo.h/.c` — 幻尔总线协议（含 LOAD / MOVE / Ping）  
-4. `stm32_arm_pipeline.c` — 可选总流程示例  
-
-板级实现：
-
-```c
-void SC171_USART_Send(const uint8_t *data, uint16_t len);
-int  HW_ServoBus_Send(const uint8_t *data, uint16_t len);
-uint16_t HW_ServoBus_Recv(uint8_t *data, uint16_t max_len, uint32_t timeout_ms);
-void HW_DelayMs(uint32_t ms);
-```
-
-半双工建议：发送前打开 TX 缓冲、发送完成后释放总线再收；`HAL_UART_Transmit` 前先停 `Receive_IT`，发完再开，避免 HAL 状态机卡死。
-
-## JOINT 处理（关键）
-
-1. 解析 20 字节帧 + CRC16  
-2. **立即**回 `STATUS(0x81)`（SEQ 回显、关节镜像、`FLAGS|=ONLINE`）  
-3. `Servo_Load` → 按关节角写 6 路舵机  
-4. 约 100ms 周期再报 STATUS，保持 `stm32_online`  
-
-## SC171V2 运行
+## 启动
 
 ```bash
-bash ~/sc171v2_agent/start_servo_bridge.sh   # 不要开 ECHO_SIM
+# 默认 --drive jetarm @ 1Mbps
+bash ~/sc171v2_agent/start_servo_bridge.sh
 tail -f /tmp/sc171v2_servo_bridge.log
 ```
 
-期望：
+成功标志：
 
 ```
-[H3-UART] ok=true
-[H4-RX] ok=true cmd=129
-[H5-UP] actual=[...]
+[H0-OPEN] CDC line_coding=1000000
+[H0-READY] drive=jetarm
+[H4-RX] protocol=jetarm success=0   # 读位置成功
+[H5-UP] pose={...} actual=[...]
 ```
 
-## 协议说明
+调试旧 20 字节协议：`DRIVE=aa55 bash start_servo_bridge.sh`
 
-详见同目录 `UART_PROTOCOL.md`。  
-仓库：https://github.com/shilihaoyi-del/tmp/tree/main/sc171v2_uart_protocol
+## 关节软保护（实测收紧）
+
+见 `joint_protection.py`：脉冲↔角度仍用 JetArm `angle_transform`；**软限位偏保守（危险/易烧）**，命令脉冲限制在 **100～900**。
+
+| 关节 | 软限位 (deg) | 备注 |
+|------|----------------|------|
+| base | -70 ~ 70 | 远离实测止点约 +107° |
+| shoulder | -140 ~ -25 | 机械上端约 +18°@50 |
+| elbow | -70 ~ 70 | 机械约 ±120° |
+| wrist_pitch | -170 ~ -35 | 实测约 -210～-50 |
+| wrist_roll | -70 ~ 70 | 机械约 ±120° |
+| gripper | 15 ~ 75 | 避开开合两端 |
+
+位姿控制走 `solve_reachable()`：URDF 工作空间门控 + IK + FK 回验，失败则**保持上一目标不驱动**。
+
+UART 写前：`H1-JAC` 雅可比平滑（Δq→JΔq→限 TCP→DLS 回关节 + EMA/抗反转）再过 `H1-SAFE`（软限位、写间隔≈0.45×move_time、相同目标跳过）。`move_time_ms=1000` 速度不变；`hold`/`estop` 时 `UNLOAD`。
+
+激活复位：`home_pose.json` 为开机 home；`H0-HOME` **关闭雅可比**，斜坡接近后 `home_exact` 精确到位；之后正常运动才开雅可比消抖。
+
+## 注意
+
+- Type-C 连的是 **USART1**，不是舵机总线口。
+- 舵机需 VIN（拓展板供电）。
+- ID6 离线时桥接会跳过夹爪写位置，其余轴仍可控。

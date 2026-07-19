@@ -1,7 +1,8 @@
 """
-PC-side bridge: gesture -> 6 joint targets -> local FastAPI / MQTT.
+PC-side bridge: gesture -> pose_delta (+ gripper) -> local FastAPI / MQTT.
 
 Self-contained (no backend package import) so vision venv can use it alone.
+SC171 runs IK on pose_delta.
 """
 
 from __future__ import annotations
@@ -34,21 +35,24 @@ HANDLED = {
 
 CONF_THRESHOLD = 0.22
 
-# Step sizes (degrees) — match backend defaults
-STEP_BASE = 8.0
-STEP_SHOULDER = 6.0
-STEP_ELBOW = 6.0
-STEP_WRIST_PITCH = 5.0
-STEP_WRIST_ROLL = 8.0
+STEP_XY = 0.02
+STEP_Z = 0.02
+STEP_PITCH = 0.08
+STEP_ROLL = 0.10
 GRIPPER_OPEN = 0.0
 GRIPPER_CLOSE = 90.0
 
-JOINT_MIN = [-180.0, -90.0, -135.0, -90.0, -180.0, 0.0]
-JOINT_MAX = [180.0, 90.0, 135.0, 90.0, 180.0, 90.0]
+# Soft limits — JetArm jetarm_6dof_params.py (tune later on bench)
+JOINT_MIN = [-120.2, -180.2, -120.2, -200.2, -120.2, 0.0]
+JOINT_MAX = [120.2, 0.2, 120.2, 20.2, 120.2, 90.0]
 
 
 def clamp_joints(joints: list[float]) -> list[float]:
     return [max(JOINT_MIN[i], min(JOINT_MAX[i], float(joints[i]))) for i in range(6)]
+
+
+def _empty_delta() -> dict:
+    return {"x": 0.0, "y": 0.0, "z": 0.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0}
 
 
 @dataclass
@@ -56,6 +60,8 @@ class MapResult:
     joints: list[float]
     applied: bool
     reason: str
+    pose_delta: Optional[dict] = None
+    gripper: Optional[float] = None
 
 
 def map_gestures(
@@ -68,19 +74,20 @@ def map_gestures(
 ) -> MapResult:
     joints = list(current) if len(current) == 6 else [0.0] * 6
 
-    # Both hands vertical swipe -> wrist pitch
     if (
         left_g in ("Swipe Up", "Swipe Down")
         and right_g in ("Swipe Up", "Swipe Down")
         and left_c >= CONF_THRESHOLD
         and right_c >= CONF_THRESHOLD
     ):
-        delta = STEP_WRIST_PITCH if right_g == "Swipe Up" else -STEP_WRIST_PITCH
-        joints[3] += delta
-        return MapResult(clamp_joints(joints), True, "wrist_pitch:both")
+        d = _empty_delta()
+        d["pitch"] = STEP_PITCH if right_g == "Swipe Up" else -STEP_PITCH
+        return MapResult(clamp_joints(joints), True, "pitch:both", pose_delta=d)
 
     applied = False
     reasons: list[str] = []
+    merged = _empty_delta()
+    gripper: Optional[float] = None
 
     if right_g and right_c >= CONF_THRESHOLD and right_g in HANDLED:
         r = _apply_single(right_g, "Right", joints)
@@ -88,6 +95,11 @@ def map_gestures(
         if r.applied:
             applied = True
             reasons.append(r.reason)
+            if r.pose_delta:
+                for k in merged:
+                    merged[k] += float(r.pose_delta.get(k, 0.0))
+            if r.gripper is not None:
+                gripper = r.gripper
 
     if left_g and left_c >= CONF_THRESHOLD and left_g in HANDLED:
         r = _apply_single(left_g, "Left", joints)
@@ -95,51 +107,60 @@ def map_gestures(
         if r.applied:
             applied = True
             reasons.append(r.reason)
+            if r.pose_delta:
+                for k in merged:
+                    merged[k] += float(r.pose_delta.get(k, 0.0))
+            if r.gripper is not None:
+                gripper = r.gripper
 
+    pose_delta = merged if any(abs(v) > 1e-12 for v in merged.values()) else None
     return MapResult(
         clamp_joints(joints),
         applied,
         ",".join(reasons) if reasons else "no_action",
+        pose_delta=pose_delta,
+        gripper=gripper,
     )
 
 
 def _apply_single(gesture: str, hand: str, joints: list[float]) -> MapResult:
     if gesture in ("Pinch", "Grab"):
         joints[5] = GRIPPER_CLOSE
-        return MapResult(joints, True, "gripper:close")
+        return MapResult(joints, True, "gripper:close", gripper=GRIPPER_CLOSE)
     if gesture == "Expand":
         joints[5] = GRIPPER_OPEN
-        return MapResult(joints, True, "gripper:open")
+        return MapResult(joints, True, "gripper:open", gripper=GRIPPER_OPEN)
+    d = _empty_delta()
     if gesture == "Swipe Right":
-        joints[0] += STEP_BASE
-        return MapResult(joints, True, "base:+")
+        d["y"] = STEP_XY
+        return MapResult(joints, True, "pose:y+", pose_delta=d)
     if gesture == "Swipe Left":
-        joints[0] -= STEP_BASE
-        return MapResult(joints, True, "base:-")
+        d["y"] = -STEP_XY
+        return MapResult(joints, True, "pose:y-", pose_delta=d)
     if gesture == "Swipe V":
         if hand == "Left":
-            joints[4] += STEP_WRIST_ROLL
-            return MapResult(joints, True, "wrist_roll:+")
+            d["roll"] = STEP_ROLL
+            return MapResult(joints, True, "pose:roll+", pose_delta=d)
         return MapResult(joints, False, "swipe_v:right_ignored")
     if gesture == "Swipe Up":
         if hand == "Right":
-            joints[1] += STEP_SHOULDER
-            return MapResult(joints, True, "shoulder:+")
+            d["z"] = STEP_Z
+            return MapResult(joints, True, "pose:z+", pose_delta=d)
         if hand == "Left":
-            joints[2] += STEP_ELBOW
-            return MapResult(joints, True, "elbow:+")
+            d["x"] = STEP_XY
+            return MapResult(joints, True, "pose:x+", pose_delta=d)
     if gesture == "Swipe Down":
         if hand == "Right":
-            joints[1] -= STEP_SHOULDER
-            return MapResult(joints, True, "shoulder:-")
+            d["z"] = -STEP_Z
+            return MapResult(joints, True, "pose:z-", pose_delta=d)
         if hand == "Left":
-            joints[2] -= STEP_ELBOW
-            return MapResult(joints, True, "elbow:-")
+            d["x"] = -STEP_XY
+            return MapResult(joints, True, "pose:x-", pose_delta=d)
     return MapResult(joints, False, f"unmapped:{gesture}/{hand}")
 
 
 class ArmBridge:
-    """Publish joint targets to local FastAPI and/or MQTT broker."""
+    """Publish pose_delta / joint targets to local FastAPI and/or MQTT broker."""
 
     def __init__(
         self,
@@ -170,9 +191,14 @@ class ArmBridge:
         self.last_reason = ""
         self.last_apply_ms = 0
         self.last_signature = ""
+        self.last_pose_delta: Optional[dict] = None
+        self.last_gripper: Optional[float] = None
         self.http_ok = False
         self.mqtt_ok = False
         self._mqtt: Optional[object] = None
+        # Motion publish allowed only when cloud mode=running (after START)
+        self.drive_enabled = False
+        self._drive_check_ms = 0
 
         if self.use_mqtt:
             self._init_mqtt()
@@ -215,8 +241,35 @@ class ArmBridge:
                 print(f"[bridge] HTTP {path} failed: {exc}")
             return False
 
+    def _http_get_json(self, path: str) -> Optional[dict]:
+        req = urllib.request.Request(f"{self.api_base}{path}", method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                self.http_ok = 200 <= resp.status < 300
+                if not self.http_ok:
+                    return None
+                return json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError):
+            self.http_ok = False
+            return None
+
+    def refresh_drive_gate(self, *, force: bool = False) -> bool:
+        """Allow motion publish only when backend mode is running (not estop)."""
+        now = self._now_ms()
+        if not force and (now - self._drive_check_ms) < 400:
+            return self.drive_enabled
+        self._drive_check_ms = now
+        st = self._http_get_json("/api/status") if self.use_http else None
+        if not st:
+            self.drive_enabled = False
+            return False
+        mode = str(st.get("mode", "idle")).lower()
+        estop = bool(st.get("estop", False))
+        self.drive_enabled = mode == "running" and not estop
+        return self.drive_enabled
+
     def start_session(self) -> None:
-        """Clear estop if needed and enter running mode."""
+        """Clear estop if needed and enter running mode (explicit arm enable)."""
         self._http_json("POST", "/api/control", {"action": "reset"})
         ok = self._http_json("POST", "/api/control", {"action": "start"})
         if self.use_mqtt and self._mqtt:
@@ -224,7 +277,11 @@ class ArmBridge:
                 self._mqtt.publish("arm/pc/control", json.dumps({"action": "start"}), qos=1)
             except Exception:
                 pass
-        print(f"[bridge] session start via HTTP={'ok' if ok else 'fail'} api={self.api_base}")
+        self.refresh_drive_gate(force=True)
+        print(
+            f"[bridge] session START via HTTP={'ok' if ok else 'fail'} "
+            f"drive={self.drive_enabled} api={self.api_base}"
+        )
         print("[bridge] tip: set ENABLE_SIMULATOR=false on backend when using real camera")
 
     def close(self) -> None:
@@ -262,7 +319,6 @@ class ArmBridge:
         verbose: bool = True,
     ) -> Optional[MapResult]:
         """Map gestures and publish when cooldown allows and mapping applied."""
-        # Normalize collecting / empty
         lg = left_g if left_g and left_g != "Collecting..." else None
         rg = right_g if right_g and right_g != "Collecting..." else None
         if not lg and not rg:
@@ -285,10 +341,29 @@ class ArmBridge:
                     f"[skip] L={lg}({left_c:.0%}) R={rg}({right_c:.0%}) "
                     f"-> {result.reason}  (need Swipe/Pinch/Expand, conf>={CONF_THRESHOLD:.0%})"
                 )
-            self.last_apply_ms = now  # avoid spam every frame
+            self.last_apply_ms = now
             return result
 
+        # Vision-only until START: recognize but do not drive the arm
+        if not self.refresh_drive_gate():
+            if verbose:
+                print(
+                    f"[armed-wait] L={lg} R={rg} -> {result.reason} "
+                    f"(press 's' or web START to enable arm)"
+                )
+            self.last_apply_ms = now
+            self.last_reason = "armed_wait_start"
+            return MapResult(
+                list(self.target),
+                False,
+                "armed_wait_start",
+                pose_delta=None,
+                gripper=None,
+            )
+
         self.target = result.joints
+        self.last_pose_delta = result.pose_delta
+        self.last_gripper = result.gripper
         self.last_reason = result.reason
         self.last_apply_ms = now
         self.last_signature = f"{lg}|{rg}|{result.reason}"
@@ -298,7 +373,8 @@ class ArmBridge:
             print(
                 f"[publish #{self.seq}] {result.reason} "
                 f"L={lg}({left_c:.0%}) R={rg}({right_c:.0%}) "
-                f"target={[round(v, 1) for v in self.target]} http={'ok' if ok else 'FAIL'}"
+                f"pose_delta={result.pose_delta} gripper={result.gripper} "
+                f"http={'ok' if ok else 'FAIL'}"
             )
         return result
 
@@ -310,6 +386,12 @@ class ArmBridge:
             "target": [round(v, 2) for v in self.target],
             "estop": False,
         }
+        if self.last_pose_delta:
+            payload["pose_delta"] = {
+                k: round(float(v), 5) for k, v in self.last_pose_delta.items()
+            }
+        if self.last_gripper is not None:
+            payload["gripper"] = float(self.last_gripper)
         ok = True
         if self.use_http:
             ok = self._http_json("POST", "/api/cmd", payload) and ok

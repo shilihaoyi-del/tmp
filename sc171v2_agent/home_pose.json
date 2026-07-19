@@ -1,0 +1,11 @@
+{
+  "joints_deg": [
+    1.68,
+    -89.28,
+    4.56,
+    -156.72,
+    -3.84,
+    45.0
+  ],
+  "note": "Z-line home (web viewport j1..j5 ≈ 0); not the working initial pose"
+}

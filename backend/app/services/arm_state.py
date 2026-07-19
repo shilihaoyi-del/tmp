@@ -14,6 +14,7 @@ from app.models.schemas import (
     DeviceStatus,
     GestureEvent,
     PcCommand,
+    Pose6,
     SystemMode,
     SystemStatusResponse,
 )
@@ -31,8 +32,15 @@ class ArmStateService:
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self.settings = settings or get_settings()
         self.mode = SystemMode.IDLE
-        self.target = [0.0] * 6
-        self.actual = [0.0] * 6
+        # Default target = working initial; Z-line home is separate (VIEW_HOME / home_pose)
+        self.target = [1.92, -89.76, -31.92, -210.0, -3.84, 45.0]
+        self.actual = list(self.target)
+        self.pose: Optional[Pose6] = None
+        self.ik_ok = True
+        self.servo_online = [False] * 6
+        self._pending_pose: Optional[Pose6] = None
+        self._pending_pose_delta: Optional[Pose6] = None
+        self._pending_gripper: Optional[float] = None
         self.fault = ""
         self.estop = False
         self.seq = 0
@@ -85,6 +93,9 @@ class ArmStateService:
             last_gesture=self.last_gesture,
             target=list(self.target),
             actual=list(self.actual),
+            pose=self.pose,
+            ik_ok=self.ik_ok,
+            servo_online=list(self.servo_online),
             fault=self.fault,
             estop=self.estop,
             latency_ms=self.latency_ms,
@@ -108,9 +119,16 @@ class ArmStateService:
             ttl_ms=self.settings.command_ttl_ms,
             mode=self.mode,
             target=list(self.target),
+            pose=self._pending_pose,
+            pose_delta=self._pending_pose_delta,
+            gripper=self._pending_gripper,
             estop=self.estop,
         )
-        self._publish("arm/device/cmd", cmd.model_dump(mode="json"), False)
+        # One-shot pose fields — clear after emit so next joint-only cmds stay clean
+        self._pending_pose = None
+        self._pending_pose_delta = None
+        self._pending_gripper = None
+        self._publish("arm/device/cmd", cmd.model_dump(mode="json", exclude_none=True), False)
         self._cmd_timestamps.append(time.time())
 
     def _emit_mode(self) -> None:
@@ -173,12 +191,8 @@ class ArmStateService:
                 self._emit_web_status()
                 return self.snapshot()
 
-            # Auto-arm from IDLE/HOLD so vision demo works without manual START
-            if not self.estop and self.mode in (SystemMode.IDLE, SystemMode.HOLD):
-                self.mode = SystemMode.RUNNING
-                self.fault = ""
-                self._emit_mode()
-
+            # Vision may run while IDLE: do NOT auto-START. Arm moves only after
+            # explicit ControlAction.START (web/console) puts mode=RUNNING.
             if is_command_expired(cmd.ts_ms, self._now_ms(), cmd.ttl_ms or self.settings.command_ttl_ms):
                 metrics_store.record_pc_cmd(forwarded=False)
                 self._emit_web_status()
@@ -189,7 +203,11 @@ class ArmStateService:
                 self._emit_web_status()
                 return self.snapshot()
 
-            self.target = clamp_joints(list(cmd.target), self.settings)
+            if cmd.target and len(cmd.target) == 6:
+                self.target = clamp_joints(list(cmd.target), self.settings)
+            self._pending_pose = cmd.pose
+            self._pending_pose_delta = cmd.pose_delta
+            self._pending_gripper = cmd.gripper
             # No real SC171V2 feedback yet: mirror target so web 3D/charts move
             if not self.device_online:
                 self.actual = list(self.target)
@@ -231,6 +249,10 @@ class ArmStateService:
             result = map_gesture_to_joints(event, self.target, self.settings)
             if result.applied:
                 self.target = clamp_joints(result.joints, self.settings)
+                if result.pose_delta:
+                    self._pending_pose_delta = Pose6(**result.pose_delta)
+                if result.gripper is not None:
+                    self._pending_gripper = float(result.gripper)
                 self._emit_device_cmd()
 
             self._emit_web_status()
@@ -241,8 +263,24 @@ class ArmStateService:
             self._device_last_hb = time.time()
             self.device_online = True
             self.stm32_online = status.stm32_online
+            free_move = str(status.carrier or "").upper() == "FREE_MOVE"
+            if free_move:
+                self.source = "free_move"
+                self.last_gesture = "FREE_MOVE"
+                self.mode = SystemMode.RUNNING
             if status.actual and len(status.actual) == 6:
                 self.actual = list(status.actual)
+                # Mirror into target so web consoles that prefer target still follow the arm
+                if free_move:
+                    self.target = list(status.actual)
+            elif status.target and len(status.target) == 6 and free_move:
+                self.target = list(status.target)
+                self.actual = list(status.target)
+            if status.pose is not None:
+                self.pose = status.pose
+            self.ik_ok = bool(status.ik_ok)
+            if status.servo_online and len(status.servo_online) == 6:
+                self.servo_online = list(status.servo_online)
             if status.carrier:
                 self.carrier = status.carrier
             if status.estop:

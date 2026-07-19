@@ -56,4 +56,3 @@ void arm_uart_make_status_reply(const arm_uart_frame_t *downlink,
     }
     arm_uart_pack_status(downlink->seq, flags, mirror, out);
 }
-

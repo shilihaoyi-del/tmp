@@ -1,0 +1,9 @@
+{
+  "joint": "base",
+  "soft_max_deg": 90.6,
+  "soft_max_measured_deg": 93.6,
+  "soft_max_pulse": 890,
+  "soft_min_deg": -70.0,
+  "soft_min_status": "pending",
+  "note": "MIN not recorded: last attempt base≈-0.7° (center). Turn base to opposite mechanical stop then 记录."
+}

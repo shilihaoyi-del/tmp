@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=bridge
+Comment=Start SC171 JetArm MQTT bridge and go to initial pose
+Exec=bash -lc '/home/aidlux/sc171v2_agent/start_gesture_bridge.sh; exec bash'
+Path=/home/aidlux/sc171v2_agent
+Icon=utilities-terminal
+Terminal=true
+Categories=Utility;
+StartupNotify=true
